@@ -25,7 +25,7 @@
 | exe 大小 | ~116 MB |
 | 环境 | Windows 10/11 x64，.NET SDK 10.0.400（编译用） |
 | 管理对象 | 全局 npm 包 `@deepseek-ai/dsh`（`npm install -g` 安装的 `dsh` 命令） |
-| DSH 配置 | `C:\Users\nanng\.dsh`（kindly-dsh-setting 配置仓库） |
+| DSH 配置 | `%USERPROFILE%\.dsh` |
 | 端口 | 3080（`dsh web` 默认） |
 
 ---
@@ -63,7 +63,7 @@
 ## 4. 文件结构
 
 ```
-F:\DSH_Data\DeepSeek Harness\
+DeepSeek Harness\
 ├── dsh-tray.exe              # 发布产物（自包含单文件，116MB）
 ├── README-tray.md            # 使用说明
 ├── tray\                     # 源码目录
