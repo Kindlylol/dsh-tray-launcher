@@ -1,0 +1,30 @@
+# Build output
+**/bin/
+**/obj/
+release-p*/
+dist/
+
+# Runtime and test artifacts
+*.log
+*.state
+*selftest.txt
+test-render.png
+
+# Local binaries
+/dsh-tray.exe
+/tray/dsh-tray.exe
+/tray/dsh-tray.dll
+/tray/dsh-tray.deps.json
+/tray/dsh-tray.runtimeconfig.json
+/tray/make-icon.ps1
+/tray/whale.svg
+/tray/PROJECT_SPEC.md
+/README-tray.md
+
+# Editor and OS files
+.vs/
+.vscode/
+*.user
+*.suo
+Thumbs.db
+.DS_Store
