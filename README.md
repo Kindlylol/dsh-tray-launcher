@@ -1,6 +1,6 @@
 # DSH Tray Launcher
 
-一个为 Windows 原生 Node.js 环境编写的轻量级 DeepSeek Harness 托盘启动器。当前版本为 `v1.0.1`。
+一个为 Windows 原生 Node.js 环境编写的轻量级 DeepSeek Harness 托盘启动器。当前版本为 `v1.0.2`。
 
 > 本项目是个人作品，并非 DeepSeek 官方产品，也不代表 DeepSeek 官方认可或背书。
 
@@ -11,6 +11,7 @@
 - 从系统托盘启动、停止和重启本机 DSH Web 服务
 - 只管理由启动器实际创建并记录的 Node.js 进程树
 - 打开 DSH Web 界面并显示当前运行状态
+- 通过 DSH API 判断后台是否真正可用，区分“进程存活”和“服务健康”
 - 检查 GitHub 与 npm 上的 DSH 更新版本
 - 创建桌面快捷方式和配置当前用户开机启动
 - 单实例运行，避免重复托盘进程

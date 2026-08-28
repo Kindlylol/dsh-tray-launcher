@@ -10,6 +10,7 @@ using System.Net.Http;
 using System.Reflection;
 using System.Runtime.InteropServices;
 using System.Text;
+using System.Text.Json;
 using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
@@ -31,6 +32,7 @@ namespace DshTray
         static ToolStripMenuItem _updateItem;
         static readonly object _serviceStateLock = new object();
         static readonly object _serviceLogLock = new object();
+        static readonly HttpClient _healthHttp = new HttpClient { Timeout = Timeout.InfiniteTimeSpan };
         static Mutex _trayMutex;
         static Process _managedServiceProcess;
 
@@ -67,6 +69,8 @@ namespace DshTray
             }
             if (args.Length > 0 && args[0] == "--selftest")
             {
+                _exeDir = Path.GetDirectoryName(Application.ExecutablePath);
+                InitDataPaths();
                 RunSelfTest();
                 return;
             }
@@ -173,6 +177,7 @@ namespace DshTray
             _menu = new ContextMenuStrip();
             // System renderer: follows Windows 11 theme, native speed, full-row hit area
             _menu.Renderer = new ToolStripSystemRenderer();
+            _menu.Opening += (s, e) => UpdateStatusAsync();
 
             _statusItem = new ToolStripMenuItem("服务: 检测中...") { Enabled = false };
             _menu.Items.Add(_statusItem);
@@ -415,6 +420,10 @@ namespace DshTray
                 && CompareVersions("0.1.1-rc.10", "0.1.1-rc.2") > 0
                 && CompareVersions("0.1.2", "0.1.1") > 0;
             sb.AppendLine("semver: " + (semverOk ? "OK" : "FAIL"));
+            bool healthParserOk = IsHealthyDescribeResponse("{\"result\":{\"ok\":true,\"value\":{}}}")
+                && !IsHealthyDescribeResponse("{\"result\":{\"ok\":false}}");
+            sb.AppendLine("api health parser: " + (healthParserOk ? "OK" : "FAIL"));
+            iconChecksOk &= healthParserOk;
 
             sb.AppendLine("=== end ===");
             File.WriteAllText(Path.Combine(AppContext.BaseDirectory, "dsh-tray-selftest.txt"), sb.ToString());
@@ -444,6 +453,9 @@ namespace DshTray
 
         // ---------- Service control ----------
         static bool IsServiceRunning()
+            => IsManagedServiceAlive() && IsDshApiHealthy();
+
+        static bool IsManagedServiceAlive()
         {
             try
             {
@@ -454,10 +466,45 @@ namespace DshTray
                 {
                     if (managed.StartTime != started) return false;
                 }
-                return IsPortOpen();
+                return true;
             }
             catch { }
             return false;
+        }
+
+        static bool IsDshApiHealthy()
+        {
+            try
+            {
+                string rpcId = Guid.NewGuid().ToString();
+                string json = JsonSerializer.Serialize(new
+                {
+                    type = "client-request",
+                    rpcId,
+                    method = "host.describe",
+                    payload = new { }
+                });
+                using var request = new HttpRequestMessage(HttpMethod.Post,
+                    "http://127.0.0.1:" + PORT + "/api/host.describe");
+                request.Content = new StringContent(json, Encoding.UTF8, "application/json");
+                using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(2));
+                using HttpResponseMessage response = _healthHttp.Send(request, timeout.Token);
+                return response.IsSuccessStatusCode
+                    && IsHealthyDescribeResponse(response.Content.ReadAsStringAsync(timeout.Token).GetAwaiter().GetResult());
+            }
+            catch { return false; }
+        }
+
+        static bool IsHealthyDescribeResponse(string json)
+        {
+            try
+            {
+                using JsonDocument document = JsonDocument.Parse(json);
+                return document.RootElement.TryGetProperty("result", out JsonElement result)
+                    && result.TryGetProperty("ok", out JsonElement ok)
+                    && ok.ValueKind == JsonValueKind.True;
+            }
+            catch { return false; }
         }
 
         static void OpenBrowser()
@@ -537,7 +584,14 @@ namespace DshTray
         {
             try
             {
-                if (IsPortOpen() && !IsServiceRunning())
+                if (IsManagedServiceAlive())
+                {
+                    if (IsDshApiHealthy()) return;
+                    Log("managed DSH process is alive but API is unhealthy; restarting it");
+                    if (!StopService())
+                        throw new InvalidOperationException("无法停止 API 异常的受管 DSH 进程");
+                }
+                if (IsPortOpen())
                     throw new InvalidOperationException("端口 " + PORT + " 已被非受管进程占用，已拒绝启动 DSH");
                 if (!File.Exists(DshCliPath))
                     throw new FileNotFoundException("未找到 DSH CLI", DshCliPath);
@@ -973,12 +1027,15 @@ namespace DshTray
         static async void UpdateStatusAsync()
         {
             // Compute on background, marshal the Text update back to the UI thread.
-            bool running = await Task.Run(() => IsServiceRunning());
+            bool managed = await Task.Run(() => IsManagedServiceAlive());
+            bool healthy = managed && await Task.Run(() => IsDshApiHealthy());
             string v = await Task.Run(() => GetLocalVersion());
             if (_statusItem != null)
-                _statusItem.Text = running
+                _statusItem.Text = healthy
                     ? "服务: 运行中 (v" + v + ")"
-                    : "服务: 已停止 (v" + v + ")";
+                    : managed
+                        ? "服务: 异常，API 不可用 (v" + v + ")"
+                        : "服务: 已停止 (v" + v + ")";
         }
 
         static void ExitApp()
