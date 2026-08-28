@@ -7,9 +7,9 @@
     <ImplicitUsings>disable</ImplicitUsings>
     <AssemblyName>dsh-tray</AssemblyName>
     <RootNamespace>DshTray</RootNamespace>
-    <Version>1.0.0</Version>
-    <AssemblyVersion>1.0.0.0</AssemblyVersion>
-    <FileVersion>1.0.0.0</FileVersion>
+    <Version>1.0.1</Version>
+    <AssemblyVersion>1.0.1.0</AssemblyVersion>
+    <FileVersion>1.0.1.0</FileVersion>
     <Product>DSH Tray Launcher</Product>
     <Description>A lightweight Windows tray launcher for DeepSeek Harness.</Description>
     <Authors>nanng</Authors>
@@ -24,6 +24,22 @@
     <DebugType>none</DebugType>
   </PropertyGroup>
   <ItemGroup>
+    <EmbeddedResource Include="deepseek-harness-icon-source.png" />
     <EmbeddedResource Include="deepseek-icon-source.png" />
   </ItemGroup>
+  <Target Name="EmbedAlternateIcon"
+          AfterTargets="PrepareForBundle"
+          BeforeTargets="GenerateSingleFileBundle"
+          Condition="'$(PublishSingleFile)' == 'true'">
+    <ItemGroup>
+      <_AppHostToPatch Include="@(FilesToBundle)" Condition="'%(FilesToBundle.RelativePath)' == '$(PublishedSingleFileName)'" />
+    </ItemGroup>
+    <Error Condition="'@(_AppHostToPatch)' == ''" Text="Could not locate the app host before single-file bundling." />
+    <Exec Command="pwsh.exe -NoLogo -NoProfile -NonInteractive -File &quot;$(MSBuildProjectDirectory)\..\tools\add-icon-resource.ps1&quot; -ExecutablePath &quot;@(_AppHostToPatch->'%(FullPath)')&quot; -IconPath &quot;$(MSBuildProjectDirectory)\whale-blue.ico&quot;" />
+  </Target>
+  <Target Name="EmbedAlternateIconInBuild"
+          AfterTargets="Build"
+          Condition="'$(DesignTimeBuild)' != 'true' and Exists('$(TargetDir)$(AssemblyName).exe')">
+    <Exec Command="pwsh.exe -NoLogo -NoProfile -NonInteractive -File &quot;$(MSBuildProjectDirectory)\..\tools\add-icon-resource.ps1&quot; -ExecutablePath &quot;$(TargetDir)$(AssemblyName).exe&quot; -IconPath &quot;$(MSBuildProjectDirectory)\whale-blue.ico&quot;" />
+  </Target>
 </Project>

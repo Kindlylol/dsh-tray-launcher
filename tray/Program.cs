@@ -26,6 +26,7 @@ namespace DshTray
         static ContextMenuStrip _menu;
         static string _logPath;
         static string _exeDir;
+        static string _dataDir;
         static ToolStripMenuItem _statusItem;
         static ToolStripMenuItem _updateItem;
         static readonly object _serviceStateLock = new object();
@@ -40,7 +41,8 @@ namespace DshTray
         const string GITHUB_REPO = "https://github.com/deepseek-ai/deepseek-harness";
         static string DshHome => Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".dsh");
         const int PORT = 3080;
-        static string ServiceStatePath => Path.Combine(_exeDir ?? AppContext.BaseDirectory, "dsh-service.state");
+        static string ServiceStatePath => Path.Combine(_dataDir ?? AppContext.BaseDirectory, "dsh-service.state");
+        static bool _startupStarted;
 
         [DllImport("user32.dll", SetLastError = true)]
         static extern bool DestroyIcon(IntPtr hIcon);
@@ -57,7 +59,10 @@ namespace DshTray
 
             if (args.Length > 0 && args[0] == "--gen-ico")
             {
-                GenIco(Path.Combine(AppContext.BaseDirectory, "whale.ico"));
+                GenIco(Path.Combine(AppContext.BaseDirectory, "whale.ico"), RenderAppIcon,
+                    Path.Combine(AppContext.BaseDirectory, "whale-preview.png"));
+                GenIco(Path.Combine(AppContext.BaseDirectory, "whale-blue.ico"), RenderLegacyIcon,
+                    Path.Combine(AppContext.BaseDirectory, "whale-blue-preview.png"));
                 return;
             }
             if (args.Length > 0 && args[0] == "--selftest")
@@ -69,7 +74,7 @@ namespace DshTray
             {
                 _silent = true;
                 _exeDir = Path.GetDirectoryName(Application.ExecutablePath);
-                _logPath = Path.Combine(_exeDir, "dsh-tray.log");
+                InitDataPaths();
                 RestartService();
                 return;
             }
@@ -77,7 +82,7 @@ namespace DshTray
             {
                 _silent = true;
                 _exeDir = Path.GetDirectoryName(Application.ExecutablePath);
-                _logPath = Path.Combine(_exeDir, "dsh-tray.log");
+                InitDataPaths();
                 StopService();
                 Log("stop test done, running=" + IsServiceRunning());
                 return;
@@ -86,15 +91,15 @@ namespace DshTray
             {
                 _silent = true;
                 _exeDir = Path.GetDirectoryName(Application.ExecutablePath);
-                _logPath = Path.Combine(_exeDir, "dsh-tray.log");
+                InitDataPaths();
                 string local = GetLocalVersion();
-                string remote = GetRemoteVersionAsync().GetAwaiter().GetResult();
-                Log("update check: local=" + local + " remote=" + (remote ?? "null"));
+                RemoteVersionInfo remoteInfo = GetRemoteVersionAsync().GetAwaiter().GetResult();
+                Log("update check: local=" + local + " remote=" + (remoteInfo?.Version ?? "null") + " installable=" + (remoteInfo?.Installable ?? false));
                 return;
             }
 
             _exeDir = Path.GetDirectoryName(Application.ExecutablePath);
-            _logPath = Path.Combine(_exeDir, "dsh-tray.log");
+            InitDataPaths();
 
             // Redirect unhandled exceptions to log
             Application.ThreadException += (s, e) => Log("unhandled: " + e.Exception);
@@ -121,38 +126,46 @@ namespace DshTray
 
             BuildMenu();
 
-            // On startup: if the dsh service is not running, start it and open the browser.
-            if (!IsServiceRunning())
-            {
-                Log("service not running on startup, starting...");
-                StartService();
-                // wait up to 40s for it to come up, then open the browser
-                bool ok = false;
-                for (int i = 0; i < 40; i++)
-                {
-                    Thread.Sleep(1000);
-                    if (IsServiceRunning()) { ok = true; break; }
-                }
-                if (ok)
-                {
-                    Log("service started on startup");
-                    OpenBrowser();
-                }
-                else
-                {
-                    Log("service failed to start on startup");
-                }
-            }
-            else
-            {
-                Log("service already running on startup");
-            }
-
+            Application.Idle += StartupOnce;
             UpdateStatusAsync();
 
             Application.Run();
             _trayMutex.ReleaseMutex();
             _trayMutex.Dispose();
+        }
+
+        static void InitDataPaths()
+        {
+            string root = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
+            _dataDir = Path.Combine(root, "DSH Tray Launcher");
+            Directory.CreateDirectory(_dataDir);
+            _logPath = Path.Combine(_dataDir, "dsh-tray.log");
+        }
+
+        static async void StartupOnce(object sender, EventArgs e)
+        {
+            if (_startupStarted) return;
+            _startupStarted = true;
+            Application.Idle -= StartupOnce;
+            bool running = await Task.Run(IsServiceRunning);
+            if (running)
+            {
+                Log("service already running on startup");
+                return;
+            }
+            Log("service not running on startup, starting...");
+            await Task.Run(StartService);
+            for (int i = 0; i < 40; i++)
+            {
+                await Task.Delay(1000);
+                if (await Task.Run(IsServiceRunning))
+                {
+                    Log("service started on startup");
+                    OpenBrowser();
+                    return;
+                }
+            }
+            Log("service failed to start on startup");
         }
 
         static void BuildMenu()
@@ -201,8 +214,18 @@ namespace DshTray
         // ---------- Icon ----------
         static Bitmap RenderAppIcon(int size)
         {
+            return RenderEmbeddedIcon(size, "DshTray.deepseek-harness-icon-source.png", true);
+        }
+
+        static Bitmap RenderLegacyIcon(int size)
+        {
+            return RenderEmbeddedIcon(size, "DshTray.deepseek-icon-source.png", false);
+        }
+
+        static Bitmap RenderEmbeddedIcon(int size, string resourceName, bool opticalCenter)
+        {
             using (Stream stream = Assembly.GetExecutingAssembly()
-                .GetManifestResourceStream("DshTray.deepseek-icon-source.png")
+                .GetManifestResourceStream(resourceName)
                 ?? throw new InvalidOperationException("内置图标资源缺失"))
             using (var source = new Bitmap(stream))
             {
@@ -212,32 +235,58 @@ namespace DshTray
                     g.Clear(Color.White);
                     g.InterpolationMode = InterpolationMode.HighQualityBicubic;
                     g.PixelOffsetMode = PixelOffsetMode.HighQuality;
-                    g.DrawImage(source, new Rectangle(0, 0, size, size));
+                    int margin = opticalCenter ? (int)Math.Round(size * 0.078125) : 0;
+                    int shiftX = opticalCenter ? (int)Math.Round(size * 0.0234375) : 0;
+                    int shiftY = opticalCenter ? (int)Math.Round(size * 0.01953125) : 0;
+                    g.DrawImage(source, new Rectangle(
+                        margin + shiftX,
+                        margin + shiftY,
+                        size - margin * 2,
+                        size - margin * 2));
                 }
                 return result;
             }
         }
 
-        static Rectangle GetBlueBounds(Bitmap bitmap)
+        static Rectangle GetInkBounds(Bitmap bitmap)
         {
             int left = bitmap.Width, top = bitmap.Height, right = -1, bottom = -1;
             for (int y = 0; y < bitmap.Height; y++)
                 for (int x = 0; x < bitmap.Width; x++)
-                    if (bitmap.GetPixel(x, y).B > bitmap.GetPixel(x, y).R + 20)
+                {
+                    Color c = bitmap.GetPixel(x, y);
+                    if ((c.R + c.G + c.B) / 3 < 245)
                     {
                         left = Math.Min(left, x); top = Math.Min(top, y);
                         right = Math.Max(right, x); bottom = Math.Max(bottom, y);
                     }
+                }
             return right < left ? Rectangle.Empty : Rectangle.FromLTRB(left, top, right + 1, bottom + 1);
         }
 
-        static void GenIco(string path)
+        static PointF GetInkCentroid(Bitmap bitmap)
+        {
+            double sumX = 0, sumY = 0, weightSum = 0;
+            for (int y = 0; y < bitmap.Height; y++)
+                for (int x = 0; x < bitmap.Width; x++)
+                {
+                    Color c = bitmap.GetPixel(x, y);
+                    double weight = 255 - (c.R + c.G + c.B) / 3.0;
+                    if (weight <= 10) continue;
+                    sumX += x * weight;
+                    sumY += y * weight;
+                    weightSum += weight;
+                }
+            return weightSum == 0 ? PointF.Empty : new PointF((float)(sumX / weightSum), (float)(sumY / weightSum));
+        }
+
+        static void GenIco(string path, Func<int, Bitmap> renderer, string previewPath)
         {
             int[] sizes = { 16, 24, 32, 48, 64, 128, 256 };
             var frames = new List<Bitmap>();
             foreach (var s in sizes)
             {
-                var bmp = RenderAppIcon(s);
+                var bmp = renderer(s);
                 frames.Add(bmp);
             }
 
@@ -275,10 +324,9 @@ namespace DshTray
                 File.WriteAllBytes(path, ms.ToArray());
             }
             foreach (var b in frames) b.Dispose();
-            // also save a large preview PNG for inspection
-            using (var big = RenderAppIcon(256))
+            using (var big = renderer(256))
             {
-                big.Save(Path.Combine(AppContext.BaseDirectory, "whale-preview.png"), ImageFormat.Png);
+                big.Save(previewPath, ImageFormat.Png);
             }
             Log("icon written: " + path);
         }
@@ -307,6 +355,7 @@ namespace DshTray
         static void RunSelfTest()
         {
             var sb = new StringBuilder();
+            bool iconChecksOk = true;
             sb.AppendLine("=== dsh-tray selftest ===");
 
             // 1. icon
@@ -319,14 +368,33 @@ namespace DshTray
                 foreach (int size in new[] { 16, 24, 32, 48, 64, 128, 256 })
                     using (var bitmap = RenderAppIcon(size))
                     {
-                        Rectangle b = GetBlueBounds(bitmap);
-                        float dx = Math.Abs((b.Left + b.Right) / 2f - size / 2f);
-                        float dy = Math.Abs((b.Top + b.Bottom) / 2f - size / 2f);
-                        sb.AppendLine("icon " + size + ": blue=" + b.X + "," + b.Y + " " + b.Width + "x" + b.Height
-                            + " center-error=" + dx.ToString("0.0", CultureInfo.InvariantCulture) + "," + dy.ToString("0.0", CultureInfo.InvariantCulture));
+                        Rectangle b = GetInkBounds(bitmap);
+                        PointF centroid = GetInkCentroid(bitmap);
+                        float center = (size - 1) / 2f;
+                        float dx = Math.Abs(centroid.X - center);
+                        float dy = Math.Abs(centroid.Y - center);
+                        bool geometryOk = !b.IsEmpty
+                            && b.Width >= size * 0.75 && b.Width <= size * 0.9
+                            && b.Height >= size * 0.5 && b.Height <= size * 0.7
+                            && dx <= Math.Max(1.5f, size * 0.025f)
+                            && dy <= Math.Max(1.5f, size * 0.025f);
+                        iconChecksOk &= geometryOk;
+                        sb.AppendLine("icon " + size + ": ink=" + b.X + "," + b.Y + " " + b.Width + "x" + b.Height
+                            + " centroid-error=" + dx.ToString("0.0", CultureInfo.InvariantCulture) + "," + dy.ToString("0.0", CultureInfo.InvariantCulture)
+                            + " " + (geometryOk ? "OK" : "FAIL"));
                     }
+                using (var legacy = RenderLegacyIcon(32))
+                {
+                    bool legacyOk = !GetInkBounds(legacy).IsEmpty;
+                    iconChecksOk &= legacyOk;
+                    sb.AppendLine("legacy blue icon: " + (legacyOk ? "OK" : "FAIL"));
+                }
             }
-            catch (Exception ex) { sb.AppendLine("icon: FAIL - " + ex.Message); }
+            catch (Exception ex)
+            {
+                iconChecksOk = false;
+                sb.AppendLine("icon: FAIL - " + ex.Message);
+            }
 
             // 2. local version
             sb.AppendLine("local version: " + GetLocalVersion());
@@ -334,8 +402,8 @@ namespace DshTray
             // 3. remote version
             try
             {
-                string r = GetRemoteVersionAsync().GetAwaiter().GetResult();
-                sb.AppendLine("remote version: " + (r ?? "(null)"));
+                RemoteVersionInfo r = GetRemoteVersionAsync().GetAwaiter().GetResult();
+                sb.AppendLine("remote version: " + (r?.Version ?? "(null)") + " (installable=" + (r?.Installable ?? false) + ", source=" + (r?.Source ?? "none") + ")");
             }
             catch (Exception ex) { sb.AppendLine("remote version: FAIL - " + ex.Message); }
 
@@ -350,6 +418,7 @@ namespace DshTray
 
             sb.AppendLine("=== end ===");
             File.WriteAllText(Path.Combine(AppContext.BaseDirectory, "dsh-tray-selftest.txt"), sb.ToString());
+            if (!iconChecksOk) Environment.ExitCode = 1;
         }
 
         // ---------- Logging ----------
@@ -472,7 +541,7 @@ namespace DshTray
                     throw new InvalidOperationException("端口 " + PORT + " 已被非受管进程占用，已拒绝启动 DSH");
                 if (!File.Exists(DshCliPath))
                     throw new FileNotFoundException("未找到 DSH CLI", DshCliPath);
-                var logFile = Path.Combine(_exeDir, "dsh-service.log");
+                var logFile = Path.Combine(_dataDir ?? AppContext.BaseDirectory, "dsh-service.log");
                 var psi = new ProcessStartInfo("node")
                 {
                     UseShellExecute = false,
@@ -566,7 +635,8 @@ namespace DshTray
             {
                 Log("update check started");
                 string local = GetLocalVersion();
-                string remote = await GetRemoteVersionAsync();
+                RemoteVersionInfo remoteInfo = await GetRemoteVersionAsync();
+                string remote = remoteInfo?.Version;
 
                 if (string.IsNullOrEmpty(remote))
                 {
@@ -581,6 +651,14 @@ namespace DshTray
                 {
                     Msg("无需更新\n本地: " + local + "\n最新: " + remote,
                         "检测更新", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                    return;
+                }
+
+                if (!remoteInfo.Installable)
+                {
+                    Msg("发现新版本 " + remote + "，但该版本目前只有 Git 标签，尚未发布到 npm。\n\n请等待 npm 发布后再使用托盘自动更新。",
+                        "检测更新", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                    Log("update unavailable: " + remoteInfo.Source);
                     return;
                 }
 
@@ -631,9 +709,36 @@ namespace DshTray
             catch (Exception ex) { Log("local version: " + ex.Message); return "未知"; }
         }
 
-        static async Task<string> GetRemoteVersionAsync()
+        sealed class RemoteVersionInfo
         {
-            // 1) git ls-remote tags (no auth, reliable)
+            public string Version { get; init; }
+            public bool Installable { get; init; }
+            public string Source { get; init; }
+        }
+
+        static async Task<RemoteVersionInfo> GetRemoteVersionAsync()
+        {
+            RemoteVersionInfo npmInfo = null;
+            RemoteVersionInfo gitInfo = null;
+            // npm is the only source that the automatic installer can consume.
+            try
+            {
+                using (var http = new HttpClient())
+                {
+                    http.Timeout = TimeSpan.FromSeconds(30);
+                    string json = await http.GetStringAsync("https://registry.npmmirror.com/@deepseek-ai%2fdsh");
+                    var m = Regex.Match(json, "\\\"dist-tags\\\"\\s*:\\s*\\{[^}]*\\\"latest\\\"\\s*:\\s*\\\"([^\\\"]+)\\\"");
+                    if (!m.Success) m = Regex.Match(json, "\\\"version\\\"\\s*:\\s*\\\"([^\\\"]+)\\\"");
+                    if (m.Success)
+                    {
+                        Log("remote (npm): " + m.Groups[1].Value);
+                        npmInfo = new RemoteVersionInfo { Version = m.Groups[1].Value, Installable = true, Source = "npm" };
+                    }
+                }
+            }
+            catch (Exception ex) { Log("npm registry: " + ex.Message); }
+
+            // Git tags are useful for visibility, but are not a safe npm install source.
             try
             {
                 var psi = new ProcessStartInfo("git", "ls-remote --tags " + GITHUB_REPO)
@@ -644,53 +749,30 @@ namespace DshTray
                 using (var p = Process.Start(psi))
                 {
                     if (p == null) throw new InvalidOperationException("无法启动 git");
-                    var stdout = p.StandardOutput.ReadToEndAsync();
-                    var stderr = p.StandardError.ReadToEndAsync();
-                    if (!p.WaitForExit(30000))
-                    {
-                        try { p.Kill(true); } catch { }
-                        throw new TimeoutException("git 远程版本检查超时");
-                    }
-                    string o = stdout.GetAwaiter().GetResult();
-                    _ = stderr.GetAwaiter().GetResult();
+                    string o = p.StandardOutput.ReadToEnd();
+                    p.WaitForExit(30000);
                     if (p.ExitCode != 0) throw new InvalidOperationException("git 退出码 " + p.ExitCode);
                     var tags = new List<string>();
                     foreach (var line in o.Split('\n'))
                     {
                         var parts = line.Trim().Split(new[] { '\t', ' ' }, StringSplitOptions.RemoveEmptyEntries);
-                        if (parts.Length >= 2)
-                        {
-                            string t = parts[1];
-                            if (t.StartsWith("refs/tags/dsh-v"))
-                                tags.Add(t.Substring("refs/tags/dsh-v".Length));
-                        }
+                        if (parts.Length >= 2 && parts[1].StartsWith("refs/tags/dsh-v"))
+                            tags.Add(parts[1].Substring("refs/tags/dsh-v".Length));
                     }
                     if (tags.Count > 0)
                     {
                         tags.Sort(CompareVersions);
-                        Log("remote (git tags): " + tags[tags.Count - 1]);
-                        return tags[tags.Count - 1];
+                        string version = tags[tags.Count - 1];
+                        Log("remote (git tag, not installable): " + version);
+                        gitInfo = new RemoteVersionInfo { Version = version, Installable = false, Source = "git tag" };
                     }
                 }
             }
             catch (Exception ex) { Log("git tags: " + ex.Message); }
 
-            // 2) npm registry
-            try
-            {
-                using (var http = new HttpClient())
-                {
-                    http.Timeout = TimeSpan.FromSeconds(30);
-                    string json = await http.GetStringAsync("https://registry.npmmirror.com/@deepseek-ai%2fdsh");
-                    var m = Regex.Match(json, "\"dist-tags\"\\s*:\\s*\\{[^}]*\"latest\"\\s*:\\s*\"([^\\\"]+)\"");
-                    if (m.Success) { Log("remote (npm dist-tags): " + m.Groups[1].Value); return m.Groups[1].Value; }
-                    var m2 = Regex.Match(json, "\"version\"\\s*:\\s*\"([^\\\"]+)\"");
-                    if (m2.Success) { Log("remote (npm version): " + m2.Groups[1].Value); return m2.Groups[1].Value; }
-                }
-            }
-            catch (Exception ex) { Log("npm registry: " + ex.Message); }
-
-            return null;
+            if (npmInfo == null) return gitInfo;
+            if (gitInfo == null) return npmInfo;
+            return CompareVersions(npmInfo.Version, gitInfo.Version) >= 0 ? npmInfo : gitInfo;
         }
 
         static int CompareVersions(string a, string b)

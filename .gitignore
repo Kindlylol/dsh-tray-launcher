@@ -3,6 +3,8 @@
 **/obj/
 release-p*/
 dist/
+tray/bin/
+tray/obj/
 
 # Runtime and test artifacts
 *.log

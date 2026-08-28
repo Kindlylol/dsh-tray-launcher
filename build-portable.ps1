@@ -1,6 +1,6 @@
 [CmdletBinding()]
 param(
-    [string]$Version = '1.0.0'
+    [string]$Version = '1.0.1'
 )
 
 $ErrorActionPreference = 'Stop'
@@ -22,6 +22,9 @@ $publishArgs = @(
     '--self-contained', 'true'
     '-p:PublishSingleFile=true'
     '-p:IncludeNativeLibrariesForSelfExtract=true'
+    "-p:Version=$Version"
+    "-p:AssemblyVersion=$Version.0"
+    "-p:FileVersion=$Version.0"
     '-o', $publish
 )
 
@@ -35,4 +38,6 @@ Copy-Item -LiteralPath (Join-Path $projectRoot 'LICENSE') -Destination $stage
 Copy-Item -LiteralPath (Join-Path $projectRoot 'THIRD_PARTY_NOTICES.md') -Destination $stage
 Compress-Archive -Path (Join-Path $stage '*') -DestinationPath $zip -CompressionLevel Optimal
 
+$hash = (Get-FileHash -Algorithm SHA256 -LiteralPath $zip).Hash.ToLowerInvariant()
+"$hash *$(Split-Path -Leaf $zip)" | Set-Content -LiteralPath "$zip.sha256" -Encoding ascii
 Get-FileHash -Algorithm SHA256 -LiteralPath $zip
