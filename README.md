@@ -1,6 +1,6 @@
 # DSH Tray Launcher
 
-一个为 Windows 原生 Node.js 环境编写的轻量级 DeepSeek Harness 托盘启动器。当前版本为 `v1.0.2`。
+一个为 Windows 原生 Node.js 环境编写的轻量级 DeepSeek Harness 托盘启动器。当前版本为 `v1.0.4`。
 
 > 本项目是个人作品，并非 DeepSeek 官方产品，也不代表 DeepSeek 官方认可或背书。
 
@@ -42,6 +42,21 @@ npm install -g @deepseek-ai/dsh
 启动器会在 Windows 中使用 `127.0.0.1:3080` 启动 DSH Web 服务。退出启动器时，只会停止状态文件中记录且启动时间匹配的受管进程树。
 
 ## 日志与问题反馈
+
+### v1.0.4：本体优先与插件隔离
+
+- 每次打开托盘默认启动核心模式。核心 profile 为 `dsh-tray-core-<DSH版本>`，只组合官方 `dsh-base`、`dsh-web-app`，与 `web` 的第三方插件分开；仍使用原 `.dsh` 中的会话、凭据和设置。
+- 托盘检查核心清单和补丁；发现全局补丁非空、核心补丁非空或核心中装入依赖就拒绝启动，不会假称完成隔离。不要在核心 profile 安装插件。
+- 新版启动 URL 的令牌仅保存在托盘内存，用于换取认证 Cookie 和打开浏览器；新写入的日志会隐藏 URL token。旧日志不会被清除或重写。
+- 对带 `dsh-api-gateway` 的新版验收 `settings/describe`；旧运行时继续验收 `host.describe`。要求 HTTP 成功、请求 ID 匹配且 `result.ok=true`；首页和监听端口不能代替 RPC 验收。
+- 更新先安装到 `%LOCALAPPDATA%\DSH Tray Launcher\runtimes` 的新目录，通过核心启动验收后才保存运行时选择。安装失败保留原服务；候选启动失败恢复原运行时并尝试核心启动。旧安装及失败候选均保留，不自动删除。
+- 更新完成保持核心模式。选择“尝试插件模式”才启动原 `web`；失败自动回核心，并提供本次日志和手动修复命令。不会仅凭 npm 安装成功就判断插件兼容，不自动批量启用或升级第三方插件。
+- 插件启动通过仅代表整套组合能启动且 RPC 可用，不能证明各插件业务功能正常。组合冲突需查看诊断；没有充分证据时不把所有插件标为损坏。
+- 托盘管理的独立运行时与命令行全局 `dsh` 分开。插件修复命令针对原 `web` profile，修复后须通过托盘重新试运行。独立目录不会自动追随全局 npm 更新。
+
+该逻辑复用 [DSH 官方 profile 架构](https://github.com/deepseek-ai/deepseek-harness/blob/master/docs/architecture.md)。运行时认证和 RPC 适配以安装包源码及真实进程验收为依据。暂不承诺未来 DSH 的协议不再变化；未知协议会验收失败并保留旧安装。
+
+本地验证：`pwsh -File tools/test-recovery.ps1`；加入 `-Install` 会在测试目录真实安装 DSH，并验证安装事务。测试使用独立 home，不读取原会话与凭据，需空闲的 3080 端口。
 
 - Windows 托盘日志：`%LOCALAPPDATA%\DSH Tray Launcher\dsh-tray.log`
 - Windows 服务日志：`%LOCALAPPDATA%\DSH Tray Launcher\dsh-service.log`

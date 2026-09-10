@@ -30,3 +30,5 @@ test-render.png
 *.suo
 Thumbs.db
 .DS_Store
+/validation/
+/probe_runtime.py
