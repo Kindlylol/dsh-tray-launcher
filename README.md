@@ -41,7 +41,19 @@ npm install -g @deepseek-ai/dsh
 
 启动器会在 Windows 中使用 `127.0.0.1:3080` 启动 DSH Web 服务。退出启动器时，只会停止状态文件中记录且启动时间匹配的受管进程树。
 
-## 日志与问题反馈
+## 建议的 DSH 更新步骤
+
+**建议更新时先切换到核心模式检测更新；更新完成、核心正常启动后，再尝试切换到插件模式。**
+
+1. 右键托盘图标，选择“切换到核心模式（无第三方插件）”，等待核心服务就绪。
+2. 在核心模式下点击“检测更新”，按提示更新 DSH 本体。
+3. 等待新版本安装、认证和 API 验收完成，确认核心模式正常启动。
+4. 如需第三方插件，再选择“尝试插件模式（失败自动回核心）”。
+5. 如果插件模式失败，继续使用自动恢复的核心模式，打开“插件诊断与修复命令”，按实际来源修复插件后再尝试。
+
+本体更新优先于第三方插件。插件不兼容不应阻止使用已验收的新本体；插件模式能启动也不代表每项插件功能都已验证。
+
+以上“检测更新”更新的是 **DSH 本体**。更新 **Windows 托盘程序** 请从 Releases 下载新版便携包，退出旧托盘后解压运行，并重新创建桌面快捷方式。
 
 ### v1.0.4：本体优先与插件隔离
 
@@ -57,6 +69,8 @@ npm install -g @deepseek-ai/dsh
 该逻辑复用 [DSH 官方 profile 架构](https://github.com/deepseek-ai/deepseek-harness/blob/master/docs/architecture.md)。运行时认证和 RPC 适配以安装包源码及真实进程验收为依据。暂不承诺未来 DSH 的协议不再变化；未知协议会验收失败并保留旧安装。
 
 本地验证：`pwsh -File tools/test-recovery.ps1`；加入 `-Install` 会在测试目录真实安装 DSH，并验证安装事务。测试使用独立 home，不读取原会话与凭据，需空闲的 3080 端口。
+
+## 日志与问题反馈
 
 - Windows 托盘日志：`%LOCALAPPDATA%\DSH Tray Launcher\dsh-tray.log`
 - Windows 服务日志：`%LOCALAPPDATA%\DSH Tray Launcher\dsh-service.log`
@@ -79,7 +93,7 @@ dotnet publish .\tray\dsh-tray.csproj -c Release -r win-x64 --self-contained tru
 
 ## 隐私与网络
 
-启动器不收集遥测。版本检查会访问 DeepSeek Harness GitHub 仓库和 npm 镜像；更新操作只有在用户确认后才执行。
+启动器不收集遥测。版本检查会访问 DeepSeek Harness GitHub 仓库和 npm 官方仓库；更新操作只有在用户确认后才执行。
 
 ## 许可证与声明
 
