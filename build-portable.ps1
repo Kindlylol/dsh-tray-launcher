@@ -34,6 +34,7 @@ if ($LASTEXITCODE -ne 0) { throw "dotnet publish failed: $LASTEXITCODE" }
 Move-Item -LiteralPath (Join-Path $publish 'dsh-tray.exe') -Destination $stage
 Remove-Item -LiteralPath $publish
 Copy-Item -LiteralPath (Join-Path $projectRoot 'README.md') -Destination $stage
+Copy-Item -LiteralPath (Join-Path $projectRoot 'CHANGELOG.md') -Destination $stage
 Copy-Item -LiteralPath (Join-Path $projectRoot 'LICENSE') -Destination $stage
 Copy-Item -LiteralPath (Join-Path $projectRoot 'THIRD_PARTY_NOTICES.md') -Destination $stage
 Compress-Archive -Path (Join-Path $stage '*') -DestinationPath $zip -CompressionLevel Optimal
