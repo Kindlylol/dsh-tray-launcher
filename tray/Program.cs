@@ -41,7 +41,6 @@ namespace DshTray
             "npm", "node_modules", "@deepseek-ai", "dsh", "package.json");
         static string LocalPackagePath => _runtimePackage ?? GlobalPackagePath;
         static string DshCliPath => Path.Combine(Path.GetDirectoryName(LocalPackagePath), "lib", "bin.js");
-        const string GITHUB_REPO = "https://github.com/deepseek-ai/deepseek-harness";
         static string DshHome => _testHome ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".dsh");
         const int PORT = 3080;
         static string ServiceStatePath => Path.Combine(_dataDir ?? AppContext.BaseDirectory, "dsh-service.state");
@@ -59,6 +58,26 @@ namespace DshTray
         static void Main(string[] args)
         {
             Application.SetHighDpiMode(HighDpiMode.PerMonitorV2);
+            if (args.Length == 2 && (args[0] == "--ui-update" || args[0] == "--ui-menu"))
+            {
+                InitDataPaths();
+                if (args[0] == "--ui-update")
+                {
+                    using var picker = new UpdateChannelForm(GetLocalVersion(), GetRemoteVersionsAsync().GetAwaiter().GetResult());
+                    var result = picker.ShowDialog();
+                    File.WriteAllText(args[1], result + "|" + picker.SelectedVersion?.Source + "|" + picker.SelectedVersion?.Version);
+                }
+                else
+                {
+                    using var host = new Form { Text = "DSH 托盘菜单预览", Width = 580, Height = 560 };
+                    _tray = new NotifyIcon();
+                    BuildMenu();
+                    host.Shown += (s, e) => _menu.Show(host, new Point(30, 30));
+                    Application.Run(host);
+                    _tray.Dispose();
+                }
+                return;
+            }
             if (args.Length > 0 && (args[0] == "--test-core" || args[0] == "--test-fallback" || args[0] == "--contract-tests" || args[0] == "--test-install"))
             {
                 RunRecoveryTests(args);
@@ -197,24 +216,28 @@ namespace DshTray
             var restart = new ToolStripMenuItem("重启 DSH 服务");
             restart.Click += (s, e) => RestartService();
             _menu.Items.Add(restart);
+            _menu.Items.Add(new ToolStripSeparator());
             var core = new ToolStripMenuItem("切换到核心模式（无第三方插件）");
             core.Click += (s, e) => SwitchMode(false);
             _menu.Items.Add(core);
             var plugins = new ToolStripMenuItem("尝试插件模式（失败自动回核心）");
             plugins.Click += (s, e) => SwitchMode(true);
             _menu.Items.Add(plugins);
-            var report = new ToolStripMenuItem("插件诊断与修复命令");
-            report.Click += (s, e) => ShowPluginReport();
-            _menu.Items.Add(report);
 
-            _updateItem = new ToolStripMenuItem("检测更新");
+            _menu.Items.Add(new ToolStripSeparator());
+            _updateItem = new ToolStripMenuItem("检测更新（latest / alpha）");
             _updateItem.Click += (s, e) => CheckForUpdatesAsync();
             _menu.Items.Add(_updateItem);
 
+            _menu.Items.Add(new ToolStripSeparator());
+            var report = new ToolStripMenuItem("插件诊断与修复命令");
+            report.Click += (s, e) => ShowPluginReport();
+            _menu.Items.Add(report);
             var logs = new ToolStripMenuItem("查看日志");
             logs.Click += (s, e) => OpenLogs();
             _menu.Items.Add(logs);
 
+            _menu.Items.Add(new ToolStripSeparator());
             var autostart = new ToolStripMenuItem("开机自启");
             autostart.Click += (s, e) => ToggleAutostart();
             _menu.Items.Add(autostart);
@@ -723,39 +746,12 @@ namespace DshTray
             {
                 Log("update check started");
                 string local = GetLocalVersion();
-                RemoteVersionInfo remoteInfo = await GetRemoteVersionAsync();
-                string remote = remoteInfo?.Version;
-
-                if (string.IsNullOrEmpty(remote))
+                var versions = await GetRemoteVersionsAsync();
+                using var picker = new UpdateChannelForm(local, versions);
+                if (picker.ShowDialog() == DialogResult.OK && picker.SelectedVersion != null)
                 {
-                    Msg("无法获取最新版本（网络或限流问题）\n本地版本: " + local,
-                        "检测更新", MessageBoxButtons.OK, MessageBoxIcon.Warning);
-                    return;
-                }
-
-                _updateItem.Text = "检测更新 (本地 " + local + " / 最新 " + remote + ")";
-
-                if (CompareVersions(local, remote) >= 0)
-                {
-                    Msg("无需更新\n本地: " + local + "\n最新: " + remote,
-                        "检测更新", MessageBoxButtons.OK, MessageBoxIcon.Information);
-                    return;
-                }
-
-                if (!remoteInfo.Installable)
-                {
-                    Msg("发现新版本 " + remote + "，但该版本目前只有 Git 标签，尚未发布到 npm。\n\n请等待 npm 发布后再使用托盘自动更新。",
-                        "检测更新", MessageBoxButtons.OK, MessageBoxIcon.Information);
-                    Log("update unavailable: " + remoteInfo.Source);
-                    return;
-                }
-
-                var r = Msg(
-                    "发现新版本！\n本地: " + local + "\n最新: " + remote + "\n\n是否立即更新？",
-                    "检测更新", MessageBoxButtons.YesNo, MessageBoxIcon.Question);
-                if (r == DialogResult.Yes)
-                {
-                    PerformUpdate(remote);
+                    Log("update selected: channel=" + picker.SelectedVersion.Source + " version=" + picker.SelectedVersion.Version);
+                    PerformUpdate(picker.SelectedVersion.Version);
                 }
             }
             catch (Exception ex)
@@ -767,6 +763,7 @@ namespace DshTray
             finally
             {
                 _updateItem.Enabled = true;
+                _updateItem.Text = "检测更新（latest / alpha）";
             }
         }
 
@@ -805,63 +802,39 @@ namespace DshTray
         }
 
         static async Task<RemoteVersionInfo> GetRemoteVersionAsync()
+            => (await GetRemoteVersionsAsync())[0];
+
+        static async Task<List<RemoteVersionInfo>> GetRemoteVersionsAsync()
         {
-            RemoteVersionInfo npmInfo = null;
-            RemoteVersionInfo gitInfo = null;
-            // npm is the only source that the automatic installer can consume.
-            try
-            {
-                using (var http = new HttpClient())
-                {
-                    http.Timeout = TimeSpan.FromSeconds(30);
-                    string json = await http.GetStringAsync("https://registry.npmjs.org/@deepseek-ai%2fdsh");
-                    var m = Regex.Match(json, "\\\"dist-tags\\\"\\s*:\\s*\\{[^}]*\\\"latest\\\"\\s*:\\s*\\\"([^\\\"]+)\\\"");
-                    if (!m.Success) m = Regex.Match(json, "\\\"version\\\"\\s*:\\s*\\\"([^\\\"]+)\\\"");
-                    if (m.Success)
-                    {
-                        Log("remote (npm): " + m.Groups[1].Value);
-                        npmInfo = new RemoteVersionInfo { Version = m.Groups[1].Value, Installable = true, Source = "npm" };
-                    }
-                }
-            }
-            catch (Exception ex) { Log("npm registry: " + ex.Message); }
-
-            // Git tags are useful for visibility, but are not a safe npm install source.
-            try
-            {
-                var psi = new ProcessStartInfo("git", "ls-remote --tags " + GITHUB_REPO)
-                {
-                    UseShellExecute = false, RedirectStandardOutput = true,
-                    RedirectStandardError = true, CreateNoWindow = true
-                };
-                using (var p = Process.Start(psi))
-                {
-                    if (p == null) throw new InvalidOperationException("无法启动 git");
-                    string o = p.StandardOutput.ReadToEnd();
-                    p.WaitForExit(30000);
-                    if (p.ExitCode != 0) throw new InvalidOperationException("git 退出码 " + p.ExitCode);
-                    var tags = new List<string>();
-                    foreach (var line in o.Split('\n'))
-                    {
-                        var parts = line.Trim().Split(new[] { '\t', ' ' }, StringSplitOptions.RemoveEmptyEntries);
-                        if (parts.Length >= 2 && parts[1].StartsWith("refs/tags/dsh-v"))
-                            tags.Add(parts[1].Substring("refs/tags/dsh-v".Length));
-                    }
-                    if (tags.Count > 0)
-                    {
-                        tags.Sort(CompareVersions);
-                        string version = tags[tags.Count - 1];
-                        Log("remote (git tag, not installable): " + version);
-                        gitInfo = new RemoteVersionInfo { Version = version, Installable = false, Source = "git tag" };
-                    }
-                }
-            }
-            catch (Exception ex) { Log("git tags: " + ex.Message); }
-
-            if (npmInfo == null) return gitInfo;
-            if (gitInfo == null) return npmInfo;
-            return npmInfo;
+            using var http = new HttpClient { Timeout = TimeSpan.FromSeconds(30) };
+            string json = await http.GetStringAsync("https://registry.npmjs.org/@deepseek-ai%2fdsh");
+            var versions = ParseUpdateChannels(json);
+            foreach (var version in versions)
+                Log("remote (npm " + version.Source + "): " + (version.Version ?? "unavailable") + " installable=" + version.Installable);
+            return versions;
         }
+
+        static List<RemoteVersionInfo> ParseUpdateChannels(string json)
+        {
+            using var document = JsonDocument.Parse(json);
+            var root = document.RootElement;
+            if (!root.TryGetProperty("dist-tags", out var tags) || tags.ValueKind != JsonValueKind.Object
+                || !root.TryGetProperty("versions", out var published) || published.ValueKind != JsonValueKind.Object)
+                throw new InvalidDataException("npm 版本信息不完整，请稍后重试。");
+            var result = new List<RemoteVersionInfo>();
+            foreach (string channel in new[] { "latest", "alpha" })
+            {
+                string version = tags.TryGetProperty(channel, out var value) && value.ValueKind == JsonValueKind.String ? value.GetString() : null;
+                bool valid = Regex.IsMatch(version ?? "", @"^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$");
+                bool installable = valid && published.TryGetProperty(version, out var entry) && entry.ValueKind == JsonValueKind.Object
+                    && entry.TryGetProperty("version", out var actual) && actual.ValueKind == JsonValueKind.String && actual.GetString() == version;
+                result.Add(new RemoteVersionInfo { Source = channel, Version = valid ? version : null, Installable = installable });
+            }
+            return result;
+        }
+
+        static bool CanUpdate(string local, RemoteVersionInfo remote)
+            => remote.Installable && Regex.IsMatch(local ?? "", @"^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$") && CompareVersions(remote.Version, local) > 0;
 
         static int CompareVersions(string a, string b)
         {

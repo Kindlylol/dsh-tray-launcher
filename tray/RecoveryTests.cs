@@ -22,6 +22,38 @@ namespace DshTray
                 if (args[0] == "--contract-tests")
                 {
                     void Check(bool value) { checks++; if (!value) throw new Exception("Contract failed: " + checks); }
+                    const string registry = "{\"dist-tags\":{\"latest\":\"0.1.5-rc.1\",\"alpha\":\"0.1.6-alpha.1\"},\"versions\":{\"0.1.5-rc.1\":{\"version\":\"0.1.5-rc.1\"},\"0.1.6-alpha.1\":{\"version\":\"0.1.6-alpha.1\"}}}";
+                    var channels = ParseUpdateChannels(registry);
+                    Check(channels.Count == 2 && channels[0].Source == "latest" && channels[1].Source == "alpha");
+                    Check(channels[0].Installable && channels[1].Installable);
+                    Check(!CanUpdate("0.1.5-rc.1", channels[0]) && CanUpdate("0.1.5-rc.1", channels[1]));
+                    Check(CanUpdate("0.1.4", channels[0]) && CanUpdate("0.1.4", channels[1]));
+                    Check(!CanUpdate("0.1.6-alpha.1", channels[0]) && !CanUpdate("0.1.6-alpha.1", channels[1]));
+                    Check(!CanUpdate("未知", channels[1]));
+                    Check(CompareVersions("0.1.10-alpha.1", "0.1.6-alpha.1") > 0);
+                    Check(CompareVersions("0.1.6-alpha.10", "0.1.6-alpha.2") > 0);
+                    Check(CompareVersions("0.1.6", "0.1.6-alpha.1") > 0);
+                    var missing = ParseUpdateChannels("{\"dist-tags\":{\"latest\":\"1.0.0\"},\"versions\":{}}");
+                    Check(!missing[0].Installable && !missing[1].Installable && missing[1].Version == null);
+                    var invalid = ParseUpdateChannels(registry.Replace("0.1.6-alpha.1", "bad;command"));
+                    Check(invalid[0].Installable && !invalid[1].Installable);
+                    bool rejected = false;
+                    try { ParseUpdateChannels("{}"); } catch (InvalidDataException) { rejected = true; }
+                    Check(rejected);
+                    using (var form = new UpdateChannelForm("0.1.5-rc.1", channels))
+                    {
+                        Check(!form.Choices[0].Enabled && form.Choices[1].Enabled);
+                        Check(form.SelectedVersion == null && !form.InstallButton.Enabled);
+                        form.Choices[1].Checked = true;
+                        Check(form.SelectedVersion == channels[1] && form.InstallButton.Enabled);
+                    }
+                    using (var form = new UpdateChannelForm("0.1.4", channels))
+                    {
+                        form.Choices[0].Checked = true;
+                        Check(form.SelectedVersion == channels[0]);
+                        form.Choices[1].Checked = true;
+                        Check(form.SelectedVersion == channels[1] && !form.Choices[0].Checked);
+                    }
                     Check(IsHealthyDescribeResponse("{\"rpcId\":\"a\",\"result\":{\"ok\":true}}", "a"));
                     Check(!IsHealthyDescribeResponse("{\"rpcId\":\"b\",\"result\":{\"ok\":true}}", "a"));
                     Check(!IsHealthyDescribeResponse("{\"result\":{\"ok\":true}}", "a"));
