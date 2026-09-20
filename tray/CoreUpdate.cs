@@ -14,6 +14,7 @@ namespace DshTray
             string previous = _runtimePackage;
             bool wasAlive = IsManagedServiceAlive();
             bool switched = false;
+            bool committed = false;
             if (_menu != null) _menu.Enabled = false;
             try
             {
@@ -65,13 +66,36 @@ namespace DshTray
                 if (!EnsureHealthyService()) throw new InvalidOperationException("候选核心未通过认证/RPC 验收");
                 if (File.Exists(RecoveryPath)) File.Copy(RecoveryPath, RecoveryPath + ".previous", true);
                 SaveRuntime();
+                committed = true;
                 Log("core update verified: " + targetVersion);
-                Msg("本体更新完成并已通过核心验收: " + targetVersion + "\n当前运行核心模式。可从托盘单独尝试插件模式；插件失败会回到核心。\n旧运行时保留在本机。",
-                    "DeepSeek Harness", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                // The core has committed successfully; plugin failure must not roll it back.
+                bool ready = false;
+                try
+                {
+                    if (!StopService()) throw new InvalidOperationException("无法停止核心服务以切换插件模式");
+                    _pluginMode = true;
+                    ready = EnsureHealthyService();
+                }
+                catch (Exception pluginError)
+                {
+                    Log("post-update plugin startup: " + pluginError.Message);
+                    _pluginMode = false;
+                    if (StopService()) ready = EnsureHealthyService();
+                }
+                SaveRuntime();
+                Msg("本体更新完成并已通过核心验收: " + targetVersion + "\n"
+                    + (ready ? (_pluginMode ? "插件模式已启动。" : "插件模式未能启动，已恢复核心模式。") : "启动未通过验收，请查看日志；已保留更新后的本体。")
+                    + "\n旧运行时保留在本机。", "DeepSeek Harness", MessageBoxButtons.OK,
+                    ready ? MessageBoxIcon.Information : MessageBoxIcon.Warning);
             }
             catch (Exception ex)
             {
                 Log("core update failed: " + ex.Message);
+                if (committed)
+                {
+                    Msg("本体已更新并通过核心验收，后续启动或模式保存失败: " + ex.Message, "DeepSeek Harness", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                    return;
+                }
                 bool recovered = !switched;
                 if (switched && StopService())
                 {

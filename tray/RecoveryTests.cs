@@ -22,6 +22,12 @@ namespace DshTray
                 if (args[0] == "--contract-tests")
                 {
                     void Check(bool value) { checks++; if (!value) throw new Exception("Contract failed: " + checks); }
+                    _pluginMode = true; SaveRuntime(); _pluginMode = false; LoadRecoverySettings();
+                    Check(_pluginMode);
+                    _pluginMode = false; SaveRuntime(); _pluginMode = true; LoadRecoverySettings();
+                    Check(!_pluginMode);
+                    File.WriteAllText(RecoveryPath, "{\"runtimePackage\":null}"); LoadRecoverySettings();
+                    Check(!_pluginMode);
                     const string registry = "{\"dist-tags\":{\"latest\":\"0.1.5-rc.1\",\"alpha\":\"0.1.6-alpha.1\"},\"versions\":{\"0.1.5-rc.1\":{\"version\":\"0.1.5-rc.1\"},\"0.1.6-alpha.1\":{\"version\":\"0.1.6-alpha.1\"}}}";
                     var channels = ParseUpdateChannels(registry);
                     Check(channels.Count == 2 && channels[0].Source == "latest" && channels[1].Source == "alpha");
@@ -60,6 +66,10 @@ namespace DshTray
                     Check(!IsHealthyDescribeResponse("{\"rpcId\":\"a\",\"result\":{\"ok\":false}}", "a"));
                     Check(!IsHealthyDescribeResponse("<html>OK</html>", "a"));
                     Check(Redact("http://localhost/?token=secret") == "http://localhost/?token=[REDACTED]");
+                    string fixture = Path.Combine(_dataDir, "runtimes", "fixture", "package.json");
+                    Directory.CreateDirectory(Path.GetDirectoryName(fixture));
+                    File.WriteAllText(fixture, "{\"version\":\"0.1.6-alpha.2\"}");
+                    _runtimePackage = fixture;
                     PrepareCoreProfile(); Check(true);
                     string patch = Path.Combine(DshHome, "profiles", CoreProfileName, "cordis.patch.yml");
                     File.WriteAllText(patch, "# empty\n[]\n"); PrepareCoreProfile(); Check(true);

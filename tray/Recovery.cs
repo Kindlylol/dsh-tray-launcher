@@ -27,12 +27,12 @@ namespace DshTray
 
         static void LoadRecoverySettings()
         {
-            // A new tray starts in core mode. Plugin activation is an explicit trial
-            // every time, so an out-of-band global update cannot reopen a broken tree.
+            // Older settings without a saved mode retain their core-mode default.
             if (!File.Exists(RecoveryPath)) return;
             try
             {
                 using var doc = JsonDocument.Parse(File.ReadAllText(RecoveryPath));
+                _pluginMode = doc.RootElement.TryGetProperty("pluginMode", out var mode) && mode.ValueKind == JsonValueKind.True;
                 string path = doc.RootElement.GetProperty("runtimePackage").GetString();
                 if (!string.IsNullOrEmpty(path))
                 {
@@ -48,7 +48,7 @@ namespace DshTray
         static void SaveRuntime()
         {
             string temp = RecoveryPath + ".tmp";
-            File.WriteAllText(temp, JsonSerializer.Serialize(new { runtimePackage = _runtimePackage }), Encoding.UTF8);
+            File.WriteAllText(temp, JsonSerializer.Serialize(new { runtimePackage = _runtimePackage, pluginMode = _pluginMode }), Encoding.UTF8);
             File.Move(temp, RecoveryPath, true);
         }
 
@@ -114,6 +114,7 @@ namespace DshTray
             if (!_pluginMode) return false;
             WritePluginReport();
             _pluginMode = false;
+            SaveRuntime();
             Log("plugin trial failed; retaining runtime, falling back to core");
             StartService();
             bool recovered = WaitForHealthy();
@@ -130,6 +131,7 @@ namespace DshTray
                 // Persisted runtime is kept even when plugin activation fails.
                 _pluginMode = plugins;
                 bool ready = EnsureHealthyService();
+                SaveRuntime();
                 Msg(ready ? (plugins && !_pluginMode ? "插件模式失败，已恢复核心模式。查看“插件诊断与修复命令”。" : "DSH 已就绪。") : "核心启动失败，请查看日志。",
                     "DeepSeek Harness", MessageBoxButtons.OK, ready ? MessageBoxIcon.Information : MessageBoxIcon.Error);
             }

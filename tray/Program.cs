@@ -177,7 +177,7 @@ namespace DshTray
             if (_startupStarted) return;
             _startupStarted = true;
             Application.Idle -= StartupOnce;
-            // Re-authenticate a fresh process and enforce the default core profile.
+            // Re-authenticate a fresh process using the last saved mode.
             if (await Task.Run(IsManagedServiceAlive) && !await Task.Run(StopService))
             {
                 Msg("无法安全停止旧受管服务，请查看日志。", "DeepSeek Harness", MessageBoxButtons.OK, MessageBoxIcon.Error);
@@ -192,6 +192,7 @@ namespace DshTray
             Log("service not running on startup, starting...");
             _menu.Enabled = false;
             bool ready = await Task.Run(EnsureHealthyService);
+            SaveRuntime();
             _menu.Enabled = true;
             UpdateStatusAsync();
             if (ready) OpenBrowser();
@@ -570,6 +571,7 @@ namespace DshTray
                 if (!StopService()) throw new InvalidOperationException("无法安全停止现有进程");
                 Thread.Sleep(1500);
                 bool ok = EnsureHealthyService();
+                SaveRuntime();
                 if (ok)
                 {
                     Log("restart OK");
