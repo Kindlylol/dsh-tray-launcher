@@ -15,7 +15,7 @@
 - 同时检查 npm 官方仓库的 latest、alpha 渠道，并选择更新版本
 - 创建桌面快捷方式和配置当前用户开机启动
 - 单实例运行，避免重复托盘进程
-- 自包含单文件发布，无需另外安装 .NET Runtime
+- 两种单文件发布：内置 .NET 的压缩便携版，以及需要 .NET Desktop Runtime 的轻量版
 - 多尺寸 Windows 图标：16、24、32、48、64、128、256 像素
 - EXE 内保留黑鲸鱼主图标和蓝鲸鱼备用图标，快捷方式“更改图标”时可选
 
@@ -23,15 +23,27 @@
 
 - Windows 10/11 x64
 - 已安装 Node.js
-- 已全局安装 `@deepseek-ai/dsh`
+- 首次使用需安装 `@deepseek-ai/dsh`；已有托盘独立运行时的用户无需重新全局安装
+- 轻量版另需 .NET 10 Desktop Runtime x64；便携版不需要
 
 ```powershell
 npm install -g @deepseek-ai/dsh
 ```
 
+## v1.0.6 下载选择（同版本重新打包）
+
+| 文件名后缀 | 区别 | 适用情况 |
+|---|---|---|
+| `win-x64-portable-compressed.zip` | 内置 .NET，EXE 约 49 MiB，ZIP 约 44 MiB | 不确定环境或不想安装 .NET，优先选择 |
+| `win-x64-light-requires-dotnet10.zip` | EXE 约 0.31 MiB，ZIP 约 0.19 MiB，需要 .NET 10 Desktop Runtime x64 | 已装运行时，或愿意安装运行时 |
+
+两版功能、配置目录和 DSH 数据相同，只选一个运行；均不包含 Node.js/npm 或 DSH 本体。轻量版并非完全免依赖。首次缺失 .NET 时，原生 .NET 启动器会提示安装；提示界面取决于系统与启动方式。也可打开随包 `.url`，在[微软下载页](https://dotnet.microsoft.com/en-us/download/dotnet/10.0)选择 **.NET Desktop Runtime → Windows → x64**，安装最新 10.0.x 后重开程序。普通 .NET Runtime、ASP.NET Core Runtime 或只有 .NET 8 均不能替代此要求。
+
+本次替换 v1.0.6 旧附件：原便携版功能未改变，已下载者不必重新安装；新压缩便携版主要减少解压后的 EXE 体积。校验值随新包变化，请使用对应 `.sha256`。
+
 ## Windows 版使用方法
 
-1. 从 [Releases](https://github.com/Kindlylol/dsh-tray-launcher/releases) 下载 `*-win-x64-portable.zip`。
+1. 从 [Releases](https://github.com/Kindlylol/dsh-tray-launcher/releases) 按下表选择便携版或轻量版。
 2. 解压到一个长期保留的目录。
 3. 运行 `dsh-tray.exe`。
 4. 如需桌面入口，在托盘菜单中选择“创建桌面图标”。
@@ -108,3 +120,10 @@ dotnet publish .\tray\dsh-tray.csproj -c Release -r win-x64 --self-contained tru
 ## 许可证与声明
 
 启动器源代码采用 MIT License。DeepSeek、DeepSeek Harness、相关名称及鲸鱼图标的权利归各自权利人所有，详见 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)。
+
+构建两种发布包：
+
+```powershell
+./build-portable.ps1 -Version 1.0.6 -Flavor portable
+./build-portable.ps1 -Version 1.0.6 -Flavor light
+```
