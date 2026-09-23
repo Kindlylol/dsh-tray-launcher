@@ -1,129 +1,62 @@
-# DSH Tray Launcher
+# DSH Tray Launcher v1.0.7-beta.1
 
-一个为 Windows 原生 Node.js 环境编写的轻量级 DeepSeek Harness 托盘启动器。当前版本为 `v1.0.6`。
+本地测试版，未发布 GitHub，不替换 v1.0.6 稳定版。本项目是个人作品，并非 DeepSeek 官方产品。
 
-> 本项目是个人作品，并非 DeepSeek 官方产品，也不代表 DeepSeek 官方认可或背书。
+## 本次解决什么
 
-![DSH Tray Launcher icon](tray/whale-preview.png)
+某个第三方 bundle 阻止插件模式启动时，不必先依赖 DSH 网页修复。托盘提供独立 Windows 修复窗口，可选择一个插件、查看最后一次插件启动诊断、暂时停用并重试，或重新启用并重试。每次只尝试一次插件启动，失败回到核心；已验收的新本体不会因插件失败回退。
 
-## 功能
+原始堆栈中出现包名不代表它就是故障源。仅明确的包级不兼容诊断会标为候选，仍需用户确认；其他情况显示“原因未确定”。不自动推断依赖、不批量更新、不卸载、不强制兼容。
 
-- 从系统托盘启动、停止和重启本机 DSH Web 服务
-- 只管理由启动器实际创建并记录的 Node.js 进程树
-- 打开 DSH Web 界面并显示当前运行状态
-- 通过 DSH API 判断后台是否真正可用，区分“进程存活”和“服务健康”
-- 同时检查 npm 官方仓库的 latest、alpha 渠道，并选择更新版本
-- 创建桌面快捷方式和配置当前用户开机启动
-- 单实例运行，避免重复托盘进程
-- 两种单文件发布：内置 .NET 的压缩便携版，以及需要 .NET Desktop Runtime 的轻量版
-- 多尺寸 Windows 图标：16、24、32、48、64、128、256 像素
-- EXE 内保留黑鲸鱼主图标和蓝鲸鱼备用图标，快捷方式“更改图标”时可选
+## Beta 与稳定版隔离
 
-## Windows 版环境要求
-
-- Windows 10/11 x64
-- 已安装 Node.js
-- 首次使用需安装 `@deepseek-ai/dsh`；已有托盘独立运行时的用户无需重新全局安装
-- 轻量版另需 .NET 10 Desktop Runtime x64；便携版不需要
-
-```powershell
-npm install -g @deepseek-ai/dsh
-```
-
-## v1.0.6 下载选择（同版本重新打包）
-
-| 文件名后缀 | 区别 | 适用情况 |
+| 项目 | Beta | 稳定版 |
 |---|---|---|
-| `win-x64-portable-compressed.zip` | 内置 .NET，EXE 约 49 MiB，ZIP 约 44 MiB | 不确定环境或不想安装 .NET，优先选择 |
-| `win-x64-light-requires-dotnet10.zip` | EXE 约 0.31 MiB，ZIP 约 0.19 MiB，需要 .NET 10 Desktop Runtime x64 | 已装运行时，或愿意安装运行时 |
+| 端口 | 3187 | 3080 |
+| 托盘状态 | `%LOCALAPPDATA%\DSH Tray Launcher Beta` | `%LOCALAPPDATA%\DSH Tray Launcher` |
+| DSH 数据 | Beta 状态目录下的 `home` | 原用户 `.dsh` |
+| 桌面图标 | DeepSeek Harness Beta | DeepSeek Harness |
+| 自动启动 | 禁用 | 保持原设置 |
 
-两版功能、配置目录和 DSH 数据相同，只选一个运行；均不包含 Node.js/npm 或 DSH 本体。轻量版并非完全免依赖。首次缺失 .NET 时，原生 .NET 启动器会提示安装；提示界面取决于系统与启动方式。也可打开随包 `.url`，在[微软下载页](https://dotnet.microsoft.com/en-us/download/dotnet/10.0)选择 **.NET Desktop Runtime → Windows → x64**，安装最新 10.0.x 后重开程序。普通 .NET Runtime、ASP.NET Core Runtime 或只有 .NET 8 均不能替代此要求。
+Beta 每次打开先显示修复窗口，不自动启动后台。点击“启动 Beta 插件环境”才启动；关闭修复窗口后也可通过托盘启动核心或插件模式。模式选择保存在 Beta 自己的配置中。
 
-本次替换 v1.0.6 旧附件：原便携版功能未改变，已下载者不必重新安装；新压缩便携版主要减少解压后的 EXE 体积。校验值随新包变化，请使用对应 `.sha256`。
+首次运行只读引用稳定版所选 DSH 运行时（若存在），不复制会话、插件、凭据或设置。运行时文件不会被修复操作修改；更新安装到 Beta 自己的 runtimes。没有稳定版运行时的电脑可使用已安装的全局 DSH。独立数据目录不是安全沙箱：测试插件仍有当前用户权限，勿运行不可信插件。
 
-## Windows 版使用方法
+## 如何试用
 
-1. 从 [Releases](https://github.com/Kindlylol/dsh-tray-launcher/releases) 按下表选择便携版或轻量版。
-2. 解压到一个长期保留的目录。
-3. 运行 `dsh-tray.exe`。
-4. 如需桌面入口，在托盘菜单中选择“创建桌面图标”。
-5. 右键托盘图标可以打开界面、重启服务、查看日志、创建快捷方式和设置开机自启。
+1. 解压本 Beta 到独立目录，运行 dsh-tray.exe；不要覆盖稳定版。
+2. 初始列表为空是正常的，正式插件不会自动导入。
+3. 点击“启动 Beta 插件环境”，在打开的 Beta 网页中按需配置测试账户、安装少量待测插件。不要手工把正式凭据或整个 `.dsh` 拷进去。
+4. 发生启动故障时打开托盘“插件修复”。选择插件后点击“停用所选并重试”，确认后执行。其余插件启动成功时托盘显示“部分插件模式”。
+5. 插件修复后选择“重新启用并重试”。若仍失败会回核心并保留用户本次启用选择，不会无限重试或悄悄卸载。
+6. 如网页在其他端口已经打开，注意使用 Beta 自动打开的 3187 地址，不要误操作稳定版。
 
-新建快捷方式默认使用黑鲸鱼图标。需要改回旧蓝鲸鱼时，在快捷方式属性中选择“更改图标”，浏览到同一个 `dsh-tray.exe` 后选择第二个图标。
+## 两种安装包
 
-启动器会在 Windows 中使用 `127.0.0.1:3080` 启动 DSH Web 服务。退出启动器时，只会停止状态文件中记录且启动时间匹配的受管进程树。
+| 文件名后缀 | .NET 要求 |
+|---|---|
+| `portable-compressed.zip` | 内置 .NET，无需额外安装 |
+| `light-requires-dotnet10.zip` | .NET 10 Desktop Runtime x64，建议最新 10.0.x |
 
-## 建议的 DSH 更新步骤
+两版功能一致，均需要 Node.js/npm 和可用的 DSH 本体。轻量版缺少运行时时使用 .NET 原生提示，随包附微软下载入口；未在无 .NET 的干净 Windows 上验证按钮跳转。
 
-**建议更新时先切换到核心模式检测更新；更新完成、核心正常启动后，托盘自动尝试插件模式。**
+## 备份与限制
 
-1. 右键托盘图标，选择“切换到核心模式（无第三方插件）”，等待核心服务就绪。
-2. 在核心模式下点击“检测更新（latest / alpha）”。同一窗口会显示两个渠道的版本及是否可更新；手动选择一个渠道后，点击“更新所选版本”。
-3. 等待新版本安装、认证和 API 验收完成，确认核心模式正常启动。
-4. 核心验收成功后自动尝试插件模式；失败自动回到核心模式。
-5. 如果插件模式失败，继续使用自动恢复的核心模式，打开“插件诊断与修复命令”，按实际来源修复插件后再尝试。
+- 只修改 Beta `home/profiles/web/package.json` 的 bundle 选择及 `dshTrayRecovery` 停用记录，不改依赖、lockfile 或补丁。
+- 每次修改使用同目录原子替换，原文件保存为 `package.json.tray-backup-*`。单项恢复用“重新启用”；完整人工恢复需先退出 Beta 后台，核对备份再替换 package.json。
+- 读取到提交前检查 manifest、profile patch 与 lockfile 指纹，发现外部变化拒绝覆盖。锁可防止本工具并发，但不代表官方包管理器遵守此锁；请勿同时编辑或执行包管理命令。非协作写入在最后检查与替换之间仍存在极短竞争窗口。
+- 无效 JSON、重复启用项、停用记录冲突、链接/junction 修复路径会拒绝修改。
+- 某些 profile patch 仍可能直接加载被移出 bundle 的插件；本版不会解析或重写任意补丁。这种情况可能仍需核心模式人工排查。
+- API 就绪仅证明组合能启动，不证明全部插件业务功能正常。
+- 本机 DSH 0.1.6-alpha.2 尚无已核实的新版兼容预检接口，本 Beta 不自行实现版本豁免，也不擅自升级 DSH 来获取新接口。
 
-本体更新优先于第三方插件。插件不兼容不应阻止使用已验收的新本体；插件模式能启动也不代表每项插件功能都已验证。
-
-`latest` 是 npm 默认发布渠道，不保证版本号没有预发布后缀；`alpha` 是测试渠道，可能包含不兼容变化。托盘不会默认选中 Alpha，也不会自动跨渠道升级。与本地相同、更旧、缺失或未实际发布的版本不可选择；其中一个渠道不可用不会隐藏另一个渠道。网络失败会明确报错，不会被当成“已经最新”。
-
-右键菜单按“状态 / 打开与重启 / 核心与插件模式 / 更新 / 诊断与日志 / 自启与快捷方式 / 退出”分组，用分隔线区分。
-
-以上“检测更新”更新的是 **DSH 本体**。更新 **Windows 托盘程序** 请从 Releases 下载新版便携包，退出旧托盘后解压运行，并重新创建桌面快捷方式。
-
-### v1.0.4：本体优先与插件隔离
-
-- v1.0.6 起打开托盘继承上次模式，旧配置首次使用核心模式。核心 profile 为 `dsh-tray-core-<DSH版本>`，只组合官方 `dsh-base`、`dsh-web-app`，与 `web` 的第三方插件分开；仍使用原 `.dsh` 中的会话、凭据和设置。
-- 托盘检查核心清单和补丁；发现全局补丁非空、核心补丁非空或核心中装入依赖就拒绝启动，不会假称完成隔离。不要在核心 profile 安装插件。
-- 新版启动 URL 的令牌仅保存在托盘内存，用于换取认证 Cookie 和打开浏览器；新写入的日志会隐藏 URL token。旧日志不会被清除或重写。
-- 对带 `dsh-api-gateway` 的新版验收 `settings/describe`；旧运行时继续验收 `host.describe`。要求 HTTP 成功、请求 ID 匹配且 `result.ok=true`；首页和监听端口不能代替 RPC 验收。
-- 更新先安装到 `%LOCALAPPDATA%\DSH Tray Launcher\runtimes` 的新目录，通过核心启动验收后才保存运行时选择。安装失败保留原服务；候选启动失败恢复原运行时并尝试核心启动。旧安装及失败候选均保留，不自动删除。
-- 更新完成并通过核心验收后自动尝试原 `web` 插件模式；失败自动回核心，并提供本次日志和手动修复命令。不会仅凭 npm 安装成功就判断插件兼容，不自动批量启用或升级第三方插件。
-- 插件启动通过仅代表整套组合能启动且 RPC 可用，不能证明各插件业务功能正常。组合冲突需查看诊断；没有充分证据时不把所有插件标为损坏。
-- 托盘管理的独立运行时与命令行全局 `dsh` 分开。插件修复命令针对原 `web` profile，修复后须通过托盘重新试运行。独立目录不会自动追随全局 npm 更新。
-
-该逻辑复用 [DSH 官方 profile 架构](https://github.com/deepseek-ai/deepseek-harness/blob/master/docs/architecture.md)。运行时认证和 RPC 适配以安装包源码及真实进程验收为依据。暂不承诺未来 DSH 的协议不再变化；未知协议会验收失败并保留旧安装。
-
-本地验证：`pwsh -File tools/test-recovery.ps1`；加入 `-Install` 会在测试目录真实安装 DSH，并验证安装事务。测试使用独立 home，不读取原会话与凭据，需空闲的 3080 端口。
-
-## 日志与问题反馈
-
-- Windows 托盘日志：`%LOCALAPPDATA%\DSH Tray Launcher\dsh-tray.log`
-- Windows 服务日志：`%LOCALAPPDATA%\DSH Tray Launcher\dsh-service.log`
-- 使用前请附上版本、发布包名称、Windows 版本和相关日志片段（不要上传账号、密钥或私人数据）。
-- Bug 和兼容性问题请提交到 [GitHub Issues](https://github.com/Kindlylol/dsh-tray-launcher/issues)。
-
-## 作者与贡献
-
-- Windows 托盘启动器：`Kindlylol`
-- WSL2 用户请使用独立项目：[dsh-tray-launcher-wsl](https://github.com/Kindlylol/dsh-tray-launcher-wsl)。
-
-## 从源码构建
-
-需要 .NET 10 SDK：
+## 构建与验证
 
 ```powershell
-dotnet build .\tray\dsh-tray.csproj
-dotnet publish .\tray\dsh-tray.csproj -c Release -r win-x64 --self-contained true
+./build-portable.ps1 -Version 1.0.7-beta.1 -Flavor portable
+./build-portable.ps1 -Version 1.0.7-beta.1 -Flavor light
 ```
 
-## 启动模式（v1.0.6）
+测试入口：`--contract-tests <新目录>`、`--repair-tests <新目录>`；真实隔离测试为 `--repair-integration <新目录> <现有DSH包的package.json>`，使用 3187，测试结束停止自己创建的服务。UI 夹具为 `--repair-ui-fixture <新目录>`，只改夹具清单，不启动真实 DSH。
 
-冷启动继承上次模式：核心仍为核心，插件仍为插件。插件启动失败自动回核心，并记住回退结果。旧配置没有模式记录时默认核心。DSH 本体更新成功后，先完成核心验收，再默认尝试插件模式。
-
-`npm warn deprecated node-domexception@1.0.0` 是上游兼容依赖的弃用提醒，不等于更新失败；无需自行删除该依赖。
-
-## 隐私与网络
-
-启动器不收集遥测。版本检查会访问 npm 官方仓库，一次请求同时读取 latest、alpha 及已发布版本清单；更新操作只有在用户手动选择版本并确认后才执行。
-
-## 许可证与声明
-
-启动器源代码采用 MIT License。DeepSeek、DeepSeek Harness、相关名称及鲸鱼图标的权利归各自权利人所有，详见 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)。
-
-构建两种发布包：
-
-```powershell
-./build-portable.ps1 -Version 1.0.6 -Flavor portable
-./build-portable.ps1 -Version 1.0.6 -Flavor light
-```
+见随包 BETA-VALIDATION.md 的验证范围。正式源配置与私有验证日志不会打入发布包。

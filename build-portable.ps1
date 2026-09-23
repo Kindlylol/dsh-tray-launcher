@@ -1,6 +1,6 @@
 [CmdletBinding()]
 param(
-    [string]$Version = '1.0.6',
+    [string]$Version = '1.0.7-beta.1',
     [ValidateSet('portable', 'light')]
     [string]$Flavor = 'portable'
 )
@@ -27,8 +27,8 @@ $publishArgs = @(
     '-p:PublishSingleFile=true'
     '-p:IncludeNativeLibrariesForSelfExtract=true'
     "-p:Version=$Version"
-    "-p:AssemblyVersion=$Version.0"
-    "-p:FileVersion=$Version.0"
+    "-p:AssemblyVersion=$($Version.Split('-')[0]).0"
+    "-p:FileVersion=$($Version.Split('-')[0]).0"
     '-o', $publish
 )
 
@@ -39,6 +39,7 @@ Move-Item -LiteralPath (Join-Path $publish 'dsh-tray.exe') -Destination $stage
 Remove-Item -LiteralPath $publish
 Copy-Item -LiteralPath (Join-Path $projectRoot 'README.md') -Destination $stage
 Copy-Item -LiteralPath (Join-Path $projectRoot 'CHANGELOG.md') -Destination $stage
+Copy-Item -LiteralPath (Join-Path $projectRoot 'BETA-VALIDATION.md') -Destination $stage
 Copy-Item -LiteralPath (Join-Path $projectRoot 'LICENSE') -Destination $stage
 Copy-Item -LiteralPath (Join-Path $projectRoot 'THIRD_PARTY_NOTICES.md') -Destination $stage
 $description = if ($Flavor -eq 'portable') {

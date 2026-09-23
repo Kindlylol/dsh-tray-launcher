@@ -36,8 +36,7 @@ namespace DshTray
                 string path = doc.RootElement.GetProperty("runtimePackage").GetString();
                 if (!string.IsNullOrEmpty(path))
                 {
-                    string allowed = Path.GetFullPath(Path.Combine(_dataDir, "runtimes")) + Path.DirectorySeparatorChar;
-                    if (!Path.GetFullPath(path).StartsWith(allowed, StringComparison.OrdinalIgnoreCase) || !File.Exists(path))
+                    if (!AllowedRuntime(path))
                         throw new InvalidOperationException("已保存的运行时不存在或不在托盘运行时目录");
                     _runtimePackage = path;
                 }
@@ -112,6 +111,7 @@ namespace DshTray
             if (WaitForHealthy()) return true;
             if (!StopService()) return false;
             if (!_pluginMode) return false;
+            CapturePluginFailure();
             WritePluginReport();
             _pluginMode = false;
             SaveRuntime();
@@ -157,7 +157,7 @@ namespace DshTray
                     if (hasDependencies && dependencies.TryGetProperty(package, out var source)
                         && Regex.IsMatch(source.GetString() ?? "", @"^[~^<>=*0-9xX .|+a-z-]+$")
                         && !source.GetString().Contains(":"))
-                        text.AppendLine("  dsh plugin --profile web add " + package + "@latest");
+                        text.AppendLine("  请在 Beta 的官方插件管理器中检查此包更新，不使用全局 dsh 命令。");
                     else text.AppendLine("  本地/仓库/自定义来源：请按原来源维护，未生成可能无效的 npm 更新命令。");
                 }
             }

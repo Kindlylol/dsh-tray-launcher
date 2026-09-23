@@ -42,7 +42,7 @@ namespace DshTray
         static string LocalPackagePath => _runtimePackage ?? GlobalPackagePath;
         static string DshCliPath => Path.Combine(Path.GetDirectoryName(LocalPackagePath), "lib", "bin.js");
         static string DshHome => _testHome ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".dsh");
-        const int PORT = 3080;
+        const int PORT = 3187;
         static string ServiceStatePath => Path.Combine(_dataDir ?? AppContext.BaseDirectory, "dsh-service.state");
         static bool _startupStarted;
 
@@ -58,6 +58,9 @@ namespace DshTray
         static void Main(string[] args)
         {
             Application.SetHighDpiMode(HighDpiMode.PerMonitorV2);
+            if (args.Length == 3 && args[0] == "--repair-integration") { RunRepairIntegration(args[1], args[2]); return; }
+            if (args.Length == 2 && args[0] == "--repair-tests") { RunPluginRecoveryTests(args[1]); return; }
+            if (args.Length == 2 && args[0] == "--repair-ui-fixture") { RunRepairUiFixture(args[1]); return; }
             if (args.Length == 2 && (args[0] == "--ui-update" || args[0] == "--ui-menu"))
             {
                 InitDataPaths();
@@ -134,7 +137,7 @@ namespace DshTray
             Application.ThreadException += (s, e) => Log("unhandled: " + e.Exception);
             AppDomain.CurrentDomain.UnhandledException += (s, e) => Log("unhandled app: " + e.ExceptionObject);
 
-            _trayMutex = new Mutex(true, "Local\\DeepSeekHarness.DshTray", out bool ownsMutex);
+            _trayMutex = new Mutex(true, "Local\\DeepSeekHarness.DshTray.Beta", out bool ownsMutex);
             if (!ownsMutex)
             {
                 Log("another tray instance is already running");
@@ -146,7 +149,7 @@ namespace DshTray
 
             _tray = new NotifyIcon();
             _tray.Icon = MakeIcon();
-            _tray.Text = "DeepSeek Harness";
+            _tray.Text = "DSH Beta — 独立测试环境";
             _tray.Visible = true;
 
             // Left-click: no action (do nothing). Double-click: open UI.
@@ -155,7 +158,8 @@ namespace DshTray
 
             BuildMenu();
 
-            Application.Idle += StartupOnce;
+            // Beta never automatically starts copied production plugins.
+            OpenPluginRecovery();
             UpdateStatusAsync();
 
             Application.Run();
@@ -166,10 +170,11 @@ namespace DshTray
         static void InitDataPaths()
         {
             string root = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
-            _dataDir = Path.Combine(root, "DSH Tray Launcher");
+            _dataDir = Path.Combine(root, "DSH Tray Launcher Beta");
             Directory.CreateDirectory(_dataDir);
             _logPath = Path.Combine(_dataDir, "dsh-tray.log");
             LoadRecoverySettings();
+            InitializeBeta();
         }
 
         static async void StartupOnce(object sender, EventArgs e)
@@ -231,6 +236,9 @@ namespace DshTray
             _menu.Items.Add(_updateItem);
 
             _menu.Items.Add(new ToolStripSeparator());
+            var repair = new ToolStripMenuItem("插件修复（Beta 独立窗口）");
+            repair.Click += (s, e) => OpenPluginRecovery();
+            _menu.Items.Add(repair);
             var report = new ToolStripMenuItem("插件诊断与修复命令");
             report.Click += (s, e) => ShowPluginReport();
             _menu.Items.Add(report);
@@ -240,7 +248,8 @@ namespace DshTray
 
             _menu.Items.Add(new ToolStripSeparator());
             var autostart = new ToolStripMenuItem("开机自启");
-            autostart.Click += (s, e) => ToggleAutostart();
+            autostart.Enabled = false;
+            autostart.Text = "Beta 不设置开机自启";
             _menu.Items.Add(autostart);
 
             var desktop = new ToolStripMenuItem("创建桌面图标");
@@ -684,9 +693,9 @@ namespace DshTray
             {
                 lock (_serviceLogLock)
                 {
-                    var match = Regex.Match(line, @"^dsh web: (http://127\.0\.0\.1:3080/\?token=[A-Za-z0-9_-]+)(?:\s|$)");
+                    var match = Regex.Match(line, @"^dsh web: (http://127\.0\.0\.1:" + PORT + @"/\?token=[A-Za-z0-9_-]+)(?:\s|$)");
                     if (match.Success) _launchUrl = match.Groups[1].Value;
-                    if (Regex.IsMatch(line, @"^dsh web: http://127\.0\.0\.1:3080/(?:\?token=[A-Za-z0-9_-]+)?(?:\s|$)")) _readyAnnounced = true;
+                    if (Regex.IsMatch(line, @"^dsh web: http://127\.0\.0\.1:" + PORT + @"/(?:\?token=[A-Za-z0-9_-]+)?(?:\s|$)")) _readyAnnounced = true;
                     string clean = Redact(line);
                     _attemptLines.Add(clean);
                     if (_attemptLines.Count > 500) _attemptLines.RemoveAt(0);
@@ -883,7 +892,7 @@ namespace DshTray
                     return;
                 }
 
-                string lnkPath = Path.Combine(desktop, "DeepSeek Harness.lnk");
+                string lnkPath = Path.Combine(desktop, "DeepSeek Harness Beta.lnk");
 
                 // If exists, ask to overwrite
                 if (File.Exists(lnkPath))
@@ -974,7 +983,7 @@ namespace DshTray
             string v = await Task.Run(() => GetLocalVersion());
             if (_statusItem != null)
                 _statusItem.Text = healthy
-                    ? "服务: " + (_pluginMode ? "插件模式" : "核心模式") + " (v" + v + ")"
+                    ? "服务: " + (_pluginMode ? PluginModeLabel() : "核心模式") + " (v" + v + ")"
                     : managed
                         ? "服务: 异常，API 不可用 (v" + v + ")"
                         : "服务: 已停止 (v" + v + ")";
