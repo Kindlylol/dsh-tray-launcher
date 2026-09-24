@@ -1,6 +1,12 @@
-# DSH Tray Launcher v1.0.7-beta.1
+# DSH Tray Launcher v1.0.7-beta.3
 
-本地测试版，未发布 GitHub，不替换 v1.0.6 稳定版。本项目是个人作品，并非 DeepSeek 官方产品。
+GitHub Beta 预发布版，不替换 v1.0.6 正式版。本项目是个人作品，并非 DeepSeek 官方产品。
+
+## 原环境实机试用
+
+使用 `dsh-tray.exe --use-original-environment` 启动，会直接使用原用户 `.dsh`、稳定托盘状态目录及 3080 端口，自动沿用上次核心/插件模式。此模式与稳定托盘使用同一个互斥锁，不能同时运行。修复窗口会标注“原环境”，停用/启用操作会直接修改原来的插件清单；操作前请保留数据备份。不会复制或重新安装插件。
+
+不带此参数仍按下文使用独立环境。原环境试用结束后，退出 Beta 再启动原来的稳定版即可；已做的插件清单调整会保留，必要时使用备份恢复。此参数不会修改开机自启入口。
 
 ## 本次解决什么
 
@@ -8,7 +14,7 @@
 
 原始堆栈中出现包名不代表它就是故障源。仅明确的包级不兼容诊断会标为候选，仍需用户确认；其他情况显示“原因未确定”。不自动推断依赖、不批量更新、不卸载、不强制兼容。
 
-## Beta 与稳定版隔离
+## 默认独立环境与稳定版的区别
 
 | 项目 | Beta | 稳定版 |
 |---|---|---|
@@ -18,11 +24,11 @@
 | 桌面图标 | DeepSeek Harness Beta | DeepSeek Harness |
 | 自动启动 | 禁用 | 保持原设置 |
 
-Beta 每次打开先显示修复窗口，不自动启动后台。点击“启动 Beta 插件环境”才启动；关闭修复窗口后也可通过托盘启动核心或插件模式。模式选择保存在 Beta 自己的配置中。
+不带原环境参数时，Beta 每次打开先显示修复窗口，不自动启动后台。点击“启动 Beta 插件环境”才启动；关闭修复窗口后也可通过托盘启动核心或插件模式。模式选择保存在 Beta 自己的配置中。
 
 首次运行只读引用稳定版所选 DSH 运行时（若存在），不复制会话、插件、凭据或设置。运行时文件不会被修复操作修改；更新安装到 Beta 自己的 runtimes。没有稳定版运行时的电脑可使用已安装的全局 DSH。独立数据目录不是安全沙箱：测试插件仍有当前用户权限，勿运行不可信插件。
 
-## 如何试用
+## 如何试用独立环境
 
 1. 解压本 Beta 到独立目录，运行 dsh-tray.exe；不要覆盖稳定版。
 2. 初始列表为空是正常的，正式插件不会自动导入。
@@ -42,7 +48,7 @@ Beta 每次打开先显示修复窗口，不自动启动后台。点击“启动
 
 ## 备份与限制
 
-- 只修改 Beta `home/profiles/web/package.json` 的 bundle 选择及 `dshTrayRecovery` 停用记录，不改依赖、lockfile 或补丁。
+- 只修改当前选定环境的 `profiles/web/package.json` 的 bundle 选择及 `dshTrayRecovery` 停用记录，不改依赖、lockfile 或补丁。
 - 每次修改使用同目录原子替换，原文件保存为 `package.json.tray-backup-*`。单项恢复用“重新启用”；完整人工恢复需先退出 Beta 后台，核对备份再替换 package.json。
 - 读取到提交前检查 manifest、profile patch 与 lockfile 指纹，发现外部变化拒绝覆盖。锁可防止本工具并发，但不代表官方包管理器遵守此锁；请勿同时编辑或执行包管理命令。非协作写入在最后检查与替换之间仍存在极短竞争窗口。
 - 无效 JSON、重复启用项、停用记录冲突、链接/junction 修复路径会拒绝修改。
@@ -53,10 +59,13 @@ Beta 每次打开先显示修复窗口，不自动启动后台。点击“启动
 ## 构建与验证
 
 ```powershell
-./build-portable.ps1 -Version 1.0.7-beta.1 -Flavor portable
-./build-portable.ps1 -Version 1.0.7-beta.1 -Flavor light
+./build-portable.ps1 -Version 1.0.7-beta.3 -Flavor portable
+./build-portable.ps1 -Version 1.0.7-beta.3 -Flavor light
 ```
+
+菜单回归入口：`--repair-menu-tests <新目录>`，验证修复窗口打开、最小化恢复和关闭后的菜单状态。建议核心更新前切换到核心模式检测更新，启动后尝试切换到插件模式。
 
 测试入口：`--contract-tests <新目录>`、`--repair-tests <新目录>`；真实隔离测试为 `--repair-integration <新目录> <现有DSH包的package.json>`，使用 3187，测试结束停止自己创建的服务。UI 夹具为 `--repair-ui-fixture <新目录>`，只改夹具清单，不启动真实 DSH。
 
 见随包 BETA-VALIDATION.md 的验证范围。正式源配置与私有验证日志不会打入发布包。
+

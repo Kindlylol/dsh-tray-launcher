@@ -1,14 +1,15 @@
 [CmdletBinding()]
 param(
-    [string]$Version = '1.0.7-beta.1',
+    [string]$Version = '1.0.7-beta.3',
     [ValidateSet('portable', 'light')]
-    [string]$Flavor = 'portable'
+    [string]$Flavor = 'portable',
+    [string]$OutputRoot = (Join-Path $PSScriptRoot 'dist')
 )
 
 $ErrorActionPreference = 'Stop'
 $projectRoot = $PSScriptRoot
 $suffix = if ($Flavor -eq 'portable') { 'portable-compressed' } else { 'light-requires-dotnet10' }
-$stage = Join-Path $projectRoot "dist\DSH-Tray-Launcher-v$Version-win-x64-$suffix"
+$stage = Join-Path $OutputRoot "DSH-Tray-Launcher-v$Version-win-x64-$suffix"
 $zip = "$stage.zip"
 
 if ((Test-Path -LiteralPath $stage) -or (Test-Path -LiteralPath $zip)) {

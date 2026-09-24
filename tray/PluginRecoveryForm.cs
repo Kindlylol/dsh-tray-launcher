@@ -25,6 +25,7 @@ namespace DshTray
         {
             this.store = new PluginRecoveryStore(home); this.stop = stop; this.retry = retry; this.diagnostic = diagnostic;
             Text = "DSH Beta — 插件修复";
+            if (Program.UseOriginalEnvironment) { Text += "（原环境）"; start.Text = "启动原环境插件模式"; }
             Font = new Font("Microsoft YaHei UI", 10);
             AutoScaleMode = AutoScaleMode.Dpi;
             Size = new Size(940, 620); MinimumSize = new Size(760, 500); StartPosition = FormStartPosition.CenterScreen;
@@ -33,7 +34,7 @@ namespace DshTray
             layout.RowStyles.Add(new RowStyle(SizeType.Percent, 58));
             layout.RowStyles.Add(new RowStyle(SizeType.Percent, 42));
             layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 48));
-            layout.Controls.Add(new Label { Dock = DockStyle.Fill, Text = "仅修改 Beta 的 web 插件清单；不卸载软件包、不改补丁。\n请选择一个插件。诊断只是候选证据，不会自动判定或停用依赖。\n测试数据目录：" + home, AutoEllipsis = true }, 0, 0);
+            layout.Controls.Add(new Label { Dock = DockStyle.Fill, Text = (Program.UseOriginalEnvironment ? "正在使用原环境，操作将修改原来的 web 插件清单。" : "仅修改 Beta 的 web 插件清单；不卸载软件包、不改补丁。") + "\n请选择一个插件。诊断只是候选证据，不会自动判定或停用依赖。\n数据目录：" + home, AutoEllipsis = true }, 0, 0);
             list.Columns.Add("插件", 300); list.Columns.Add("状态", 100); list.Columns.Add("诊断", 430);
             layout.Controls.Add(list, 0, 1); layout.Controls.Add(detail, 0, 2);
             var actions = new FlowLayoutPanel { Dock = DockStyle.Fill, FlowDirection = FlowDirection.LeftToRight, Padding = new Padding(0, 6, 0, 0) };
@@ -70,7 +71,7 @@ namespace DshTray
                 string log = diagnostic(); snapshot = store.Read(log);
                 foreach (var row in snapshot.Rows)
                     list.Items.Add(new ListViewItem(new[] { row.Name, row.Enabled ? "已选择启用" : "暂时停用", row.Evidence }) { Tag = row });
-                detail.Text = snapshot.Rows.Count == 0 ? "尚无第三方插件。请在 Beta 的 DSH 中安装测试插件；不会自动导入正式插件或凭据。" : "请选择插件后操作。启用清单不代表插件功能已验收。";
+                detail.Text = snapshot.Rows.Count == 0 ? "当前环境尚无第三方插件。" : "请选择插件后操作。启用清单不代表插件功能已验收。";
                 if (!string.IsNullOrWhiteSpace(log)) detail.AppendText(Environment.NewLine + Environment.NewLine + Program.RedactDiagnostic(log));
             }
             catch (Exception ex) { detail.Text = "无法读取插件清单：" + ex.Message; }
@@ -80,7 +81,7 @@ namespace DshTray
         {
             if (busy || snapshot == null || list.SelectedItems.Count != 1) return;
             var row = (PluginRecoveryStore.Row)list.SelectedItems[0].Tag;
-            if (MessageBox.Show(this, (enabled ? "重新启用 " : "暂时停用 ") + row.Name + "？\n将停止 Beta 后台、备份清单并尝试一次插件启动；失败回到核心。不会更改正式环境。", "确认插件操作", MessageBoxButtons.OKCancel, MessageBoxIcon.Question) != DialogResult.OK) return;
+            if (MessageBox.Show(this, (enabled ? "重新启用 " : "暂时停用 ") + row.Name + "？\n将停止当前后台、备份清单并尝试一次插件启动；失败回到核心。" + (Program.UseOriginalEnvironment ? "本次会修改原环境。" : "不会更改正式环境。"), "确认插件操作", MessageBoxButtons.OKCancel, MessageBoxIcon.Question) != DialogResult.OK) return;
             busy = true; refresh.Enabled = start.Enabled = false; UpdateButtons();
             string result;
             try

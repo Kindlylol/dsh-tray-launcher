@@ -42,7 +42,8 @@ namespace DshTray
         static string LocalPackagePath => _runtimePackage ?? GlobalPackagePath;
         static string DshCliPath => Path.Combine(Path.GetDirectoryName(LocalPackagePath), "lib", "bin.js");
         static string DshHome => _testHome ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".dsh");
-        const int PORT = 3187;
+        internal static bool UseOriginalEnvironment;
+        static int PORT => UseOriginalEnvironment ? 3080 : 3187;
         static string ServiceStatePath => Path.Combine(_dataDir ?? AppContext.BaseDirectory, "dsh-service.state");
         static bool _startupStarted;
 
@@ -57,7 +58,10 @@ namespace DshTray
         [STAThread]
         static void Main(string[] args)
         {
+            UseOriginalEnvironment = Array.IndexOf(args, "--use-original-environment") >= 0;
             Application.SetHighDpiMode(HighDpiMode.PerMonitorV2);
+            if (args.Length == 2 && args[0] == "--repair-menu-tests") { RunRepairMenuTests(args[1]); return; }
+            if (args.Length == 2 && args[0] == "--ui-thread-tests") { RunUiThreadTests(args[1]); return; }
             if (args.Length == 3 && args[0] == "--repair-integration") { RunRepairIntegration(args[1], args[2]); return; }
             if (args.Length == 2 && args[0] == "--repair-tests") { RunPluginRecoveryTests(args[1]); return; }
             if (args.Length == 2 && args[0] == "--repair-ui-fixture") { RunRepairUiFixture(args[1]); return; }
@@ -137,7 +141,7 @@ namespace DshTray
             Application.ThreadException += (s, e) => Log("unhandled: " + e.Exception);
             AppDomain.CurrentDomain.UnhandledException += (s, e) => Log("unhandled app: " + e.ExceptionObject);
 
-            _trayMutex = new Mutex(true, "Local\\DeepSeekHarness.DshTray.Beta", out bool ownsMutex);
+            _trayMutex = new Mutex(true, UseOriginalEnvironment ? "Local\\DeepSeekHarness.DshTray" : "Local\\DeepSeekHarness.DshTray.Beta", out bool ownsMutex);
             if (!ownsMutex)
             {
                 Log("another tray instance is already running");
@@ -149,7 +153,7 @@ namespace DshTray
 
             _tray = new NotifyIcon();
             _tray.Icon = MakeIcon();
-            _tray.Text = "DSH Beta — 独立测试环境";
+            _tray.Text = UseOriginalEnvironment ? "DSH Beta — 原环境实机试用" : "DSH Beta — 独立测试环境";
             _tray.Visible = true;
 
             // Left-click: no action (do nothing). Double-click: open UI.
@@ -158,8 +162,8 @@ namespace DshTray
 
             BuildMenu();
 
-            // Beta never automatically starts copied production plugins.
-            OpenPluginRecovery();
+            if (UseOriginalEnvironment) Application.Idle += StartupOnce;
+            else OpenPluginRecovery();
             UpdateStatusAsync();
 
             Application.Run();
@@ -170,7 +174,7 @@ namespace DshTray
         static void InitDataPaths()
         {
             string root = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
-            _dataDir = Path.Combine(root, "DSH Tray Launcher Beta");
+            _dataDir = Path.Combine(root, UseOriginalEnvironment ? "DSH Tray Launcher" : "DSH Tray Launcher Beta");
             Directory.CreateDirectory(_dataDir);
             _logPath = Path.Combine(_dataDir, "dsh-tray.log");
             LoadRecoverySettings();
@@ -196,9 +200,9 @@ namespace DshTray
             }
             Log("service not running on startup, starting...");
             _menu.Enabled = false;
-            bool ready = await Task.Run(EnsureHealthyService);
-            SaveRuntime();
-            _menu.Enabled = true;
+            bool ready;
+            try { ready = await Task.Run(EnsureHealthyService); SaveRuntime(); }
+            finally { _menu.Enabled = true; }
             UpdateStatusAsync();
             if (ready) OpenBrowser();
             else Msg("DSH 核心启动失败。请查看日志中的本次启动记录。", "DeepSeek Harness", MessageBoxButtons.OK, MessageBoxIcon.Error);
@@ -220,18 +224,22 @@ namespace DshTray
             _menu.Items.Add(open);
 
             var restart = new ToolStripMenuItem("重启 DSH 服务");
+            restart.Tag = "repair-conflict";
             restart.Click += (s, e) => RestartService();
             _menu.Items.Add(restart);
             _menu.Items.Add(new ToolStripSeparator());
             var core = new ToolStripMenuItem("切换到核心模式（无第三方插件）");
+            core.Tag = "repair-conflict";
             core.Click += (s, e) => SwitchMode(false);
             _menu.Items.Add(core);
             var plugins = new ToolStripMenuItem("尝试插件模式（失败自动回核心）");
+            plugins.Tag = "repair-conflict";
             plugins.Click += (s, e) => SwitchMode(true);
             _menu.Items.Add(plugins);
 
             _menu.Items.Add(new ToolStripSeparator());
             _updateItem = new ToolStripMenuItem("检测更新（latest / alpha）");
+            _updateItem.Tag = "repair-conflict";
             _updateItem.Click += (s, e) => CheckForUpdatesAsync();
             _menu.Items.Add(_updateItem);
 
@@ -259,6 +267,7 @@ namespace DshTray
             _menu.Items.Add(new ToolStripSeparator());
 
             var exit = new ToolStripMenuItem("退出");
+            exit.Tag = "repair-conflict";
             exit.Click += (s, e) => ExitApp();
             _menu.Items.Add(exit);
 
@@ -908,6 +917,7 @@ namespace DshTray
                 dynamic shell = Activator.CreateInstance(shellType);
                 dynamic shortcut = shell.CreateShortcut(lnkPath);
                 shortcut.TargetPath = Application.ExecutablePath;
+                shortcut.Arguments = UseOriginalEnvironment ? "--use-original-environment" : "";
                 shortcut.WorkingDirectory = Path.GetDirectoryName(Application.ExecutablePath);
                 shortcut.IconLocation = Application.ExecutablePath + ",0";
                 shortcut.Description = "DeepSeek Harness";

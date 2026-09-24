@@ -7,7 +7,7 @@
     <ImplicitUsings>disable</ImplicitUsings>
     <AssemblyName>dsh-tray</AssemblyName>
     <RootNamespace>DshTray</RootNamespace>
-    <Version>1.0.7-beta.1</Version>
+    <Version>1.0.7-beta.3</Version>
     <AssemblyVersion>1.0.7.0</AssemblyVersion>
     <FileVersion>1.0.7.0</FileVersion>
     <Product>DSH Tray Launcher</Product>

@@ -20,6 +20,8 @@ namespace DshTray
         }
         static void InitializeBeta()
         {
+            // Explicit opt-in uses the stable home, runtime selection and saved mode in place.
+            if (UseOriginalEnvironment) return;
             _testHome ??= Path.Combine(BetaRoot, "home");
             Directory.CreateDirectory(DshHome);
             string profile = Path.Combine(DshHome, "profiles", "web");
@@ -72,11 +74,25 @@ namespace DshTray
         }
         static void OpenPluginRecovery()
         {
-            if (_repairWindow != null && !_repairWindow.IsDisposed) { _repairWindow.Activate(); return; }
+            if (_repairWindow != null && !_repairWindow.IsDisposed)
+            {
+                _repairWindow.Show();
+                if (_repairWindow.WindowState == FormWindowState.Minimized) _repairWindow.WindowState = FormWindowState.Normal;
+                _repairWindow.Activate();
+                return;
+            }
             _repairWindow = new PluginRecoveryForm(DshHome, StopForRepair, RetryRepairedProfile, PluginDiagnostic);
-            if (_menu != null) _menu.Enabled = false;
-            _repairWindow.FormClosed += (_, _) => { if (_menu != null) _menu.Enabled = true; UpdateStatusAsync(); };
-            _repairWindow.Show();
+            SetRepairMenuLock(true);
+            _repairWindow.FormClosed += (_, _) => { SetRepairMenuLock(false); UpdateStatusAsync(); };
+            try { _repairWindow.Show(); }
+            catch { SetRepairMenuLock(false); _repairWindow.Dispose(); _repairWindow = null; throw; }
+        }
+        static void SetRepairMenuLock(bool locked)
+        {
+            if (_menu == null) return;
+            // Keep the menu itself usable so a hidden/minimized repair window can be recovered.
+            foreach (ToolStripItem item in _menu.Items)
+                if (Equals(item.Tag, "repair-conflict")) item.Enabled = !locked;
         }
     }
 }
